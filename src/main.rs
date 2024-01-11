@@ -3,9 +3,10 @@ use clap::{Parser, Subcommand};
 use duration_string::DurationString;
 use reqwest::{Client, header};
 use rusqlite::{Connection, params};
+use tokio::time::sleep;
 use url::{Url, ParseError};
 use zip::ZipArchive;
-use std::env;
+use std::{env, io};
 use std::fs::{OpenOptions, create_dir_all, File};
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::process::Command;
@@ -63,6 +64,45 @@ fn go_spacemesh_default_path() -> &'static str {
 
 fn parse_iso_date(iso_date: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
     iso_date.parse::<DateTime<Utc>>()
+}
+
+fn strip_trailing_newline(input: &str) -> &str {
+    input
+        .strip_suffix("\r\n")
+        .or(input.strip_suffix("\n"))
+        .unwrap_or(input)
+}
+
+async fn download_md5(url: &str) -> Result<String, Box<dyn Error>> {
+    let mut u = Url::parse(url)?;
+    u.path_segments_mut().expect("Wrong URL").pop().push("state.sql.md5");
+    let md5_url = u.to_string();
+
+    let client = Client::new();
+    let response = client.get(md5_url)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        let md5 = response.text().await?;
+        let stripped = strip_trailing_newline(&md5);
+        Ok(stripped.to_string())
+    } else {
+        Err(
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cannot download MD5 checksum"
+            ))
+        )
+    }
+}
+
+fn calculate_md5(file_path: &str) -> io::Result<String> {
+    let mut file = File::open(file_path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    let hash = md5::compute(buffer);
+    Ok(format!("{:x}", hash))
 }
 
 async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Result<(), Box<dyn Error>> {
@@ -147,6 +187,22 @@ async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Resul
     }
 }
 
+async fn download_with_retries(url: &str, file_path: &str, redirect_path: &str, max_retries: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let mut attempts = 0;
+
+    loop {
+        match download_file(url, file_path, redirect_path).await {
+            Ok(()) => return Ok(()),
+            Err(e) if attempts < max_retries => {
+                eprintln!("Download error: {}. Attemmpt {} / {}", e, attempts + 1, max_retries);
+                attempts += 1;
+                sleep(std::time::Duration::from_secs(5)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 fn trim_version(version: &str) -> &str {
     version.split('+').next().unwrap_or(version)
 }
@@ -192,7 +248,7 @@ fn calculate_latest_layer(genesis_time: String, layer_duration: String) -> Resul
     Ok(delta.num_milliseconds() / dur.num_milliseconds())
 }
 
-fn unzip_state_sql(archive_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
+async fn unzip_state_sql(archive_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
     let file = File::open(archive_path)?;
     let mut zip = ZipArchive::new(file)?;
 
@@ -241,6 +297,7 @@ fn build_url(base: &str, path: &str) -> Result<Url, ParseError> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
+    let max_retries = 5;
 
     match cli.command {
         Commands::Check { node_data, genesis_time, layer_duration } => {
@@ -285,7 +342,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     url.to_string()
                 };
 
-                download_file(&url, temp_file_str, redirect_file_str).await?;
+                if let Err(e) = download_with_retries(&url, temp_file_str, redirect_file_str, max_retries).await {
+                    eprintln!("Failed to download a file after {} attempts: {}", max_retries, e);
+                }
 
                 // Rename `state.download` -> `state.zip`
                 std::fs::rename(temp_file_str, archive_file_str)?;
@@ -297,14 +356,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if final_file_path.exists() {
                 println!("Renaming current state.sql file into state.sql.bak");
                 // Rename original State.Sql (backup)
-                std::fs::rename(final_file_str, backup_file_str)?;
+                std::fs::rename(final_file_str, backup_file_str).expect("Cannot rename state.sql -> state.sql.bak");
             }
             
             // Unzip
             unzip_state_sql(archive_file_str, final_file_str)
+                .await
                 .expect("Cannot unzip archive");
 
-            // TODO: Download the checksum and validate (e.g. http://localhost:8080/abcdef.checksum)
+            println!("Checking MD5 checksum...");
+            let archive_url = String::from_utf8(
+                std::fs::read(redirect_file_str).expect("Cannot read state.url")
+            )?;
+            let md5_expected = download_md5(&archive_url).await.expect("Cannot download md5");
+            let md5_actual = calculate_md5(final_file_str).expect("Cannot calculate md5");
+
+            assert_eq!(
+                md5_actual, md5_expected,
+                "MD5 checksums are not equal"
+            );
 
             std::fs::remove_file(redirect_file_str)?;
             std::fs::remove_file(archive_file_str)?;
