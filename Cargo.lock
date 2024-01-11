@@ -1010,6 +1010,7 @@ dependencies = [
  "reqwest",
  "rusqlite",
  "tokio",
+ "url",
  "zip",
 ]
 

@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use duration_string::DurationString;
 use reqwest::{Client, header};
 use rusqlite::{Connection, params};
+use url::{Url, ParseError};
 use zip::ZipArchive;
 use std::env;
 use std::fs::{OpenOptions, create_dir_all, File};
@@ -131,11 +132,19 @@ async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Resul
                 last_reported_progress = progress;
             }
         }
+        Ok(())
     } else {
-        println!("Cannot resume downloading: {:?}", response.status());
-    }
+        let err_message = format!("Cannot download: {:?}", response.status());
 
-    Ok(())
+        std::fs::remove_file(redirect_path)?;
+        std::fs::remove_file(file_path)?;
+        Err(
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                err_message
+            ))
+        )
+    }
 }
 
 fn trim_version(version: &str) -> &str {
@@ -223,6 +232,12 @@ fn unzip_state_sql(archive_path: &str, output_path: &str) -> Result<(), Box<dyn 
     Ok(())
 }
 
+fn build_url(base: &str, path: &str) -> Result<Url, ParseError> {
+    let mut url = Url::parse(base)?;
+    url.path_segments_mut().expect("cannot be base").extend(path.split('/'));
+    Ok(url)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
@@ -265,7 +280,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     let go_path = resolve_path(&go_spacemesh_path).unwrap();
                     let go_path_str = go_path.to_str().expect("Cannot resolve path to go-spacemesh");
-                    format!("{}{}", &download_url, get_go_spacemesh_version(&go_path_str)?)
+                    let path = format!("{}/state.zip", &get_go_spacemesh_version(&go_path_str)?);
+                    let url = build_url(&download_url, &path)?;
+                    url.to_string()
                 };
 
                 download_file(&url, temp_file_str, redirect_file_str).await?;
