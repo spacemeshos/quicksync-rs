@@ -1,15 +1,16 @@
 use chrono::{DateTime, Utc, Duration};
 use clap::{Parser, Subcommand};
 use duration_string::DurationString;
-use reqwest::Client;
+use reqwest::{Client, header};
 use rusqlite::{Connection, params};
 use zip::ZipArchive;
 use std::env;
-use std::fs::{OpenOptions, create_dir_all};
-use std::io::{Seek, SeekFrom, Write};
+use std::fs::{OpenOptions, create_dir_all, File};
+use std::io::{Seek, SeekFrom, Write, Read};
 use std::process::Command;
 use std::path::{PathBuf, Path};
 use std::error::Error;
+use std::time::Instant;
 use futures_util::StreamExt;
 
 #[derive(Parser, Debug)]
@@ -41,8 +42,8 @@ enum Commands {
         /// Path to go-spacemesh binary
         #[clap(short, long, default_value = go_spacemesh_default_path())]
         go_spacemesh_path: String,
-        /// URL to download from (without version at the end). Default: http://localhost:8080/
-        #[clap(short, long, default_value = "http://localhost:8080/")]
+        /// URL to download from (without version at the end). Default: http://localhost:8000/
+        #[clap(short, long, default_value = "http://localhost:8000/")]
         download_url: String,
     },
 }
@@ -67,7 +68,6 @@ async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Resul
     let path = Path::new(file_path);
 
     if let Some(dir) = path.parent() {
-        // Пытаемся создать директорию
         create_dir_all(dir).expect("Cannot create directory");
     }
 
@@ -90,12 +90,46 @@ async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Resul
     std::fs::write(redirect_path, final_url.as_str())?;
 
     if response.status().is_success() {
+        let total_size = response
+            .headers()
+            .get(header::CONTENT_LENGTH)
+            .and_then(|ct_len| ct_len.to_str().ok())
+            .and_then(|ct_len| ct_len.parse::<u64>().ok())
+            .unwrap_or(0) + file_size;
+
         file.seek(SeekFrom::End(0))?;
         let mut stream = response.bytes_stream();
+        let start = Instant::now();
+
+        let mut downloaded: u64 = file_size;
+        let mut last_reported_progress: i64 = -1;
 
         while let Some(item) = stream.next().await {
             let chunk = item?;
             file.write_all(&chunk)?;
+            downloaded += chunk.len() as u64;
+
+            let elapsed = start.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.0 {
+                downloaded as f64 / elapsed
+            } else {
+                0.0
+            };
+            let eta = if speed > 0.0 {
+                (total_size as f64 - downloaded as f64) / speed
+            } else {
+                0.0
+            };
+
+            let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
+            if progress > last_reported_progress {
+                println!("Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
+                    progress,
+                    downloaded as f64 / 1_024_000.0,
+                    total_size as f64 / 1_024_000.0,
+                    eta);
+                last_reported_progress = progress;
+            }
         }
     } else {
         println!("Cannot resume downloading: {:?}", response.status());
@@ -114,9 +148,8 @@ fn get_go_spacemesh_version(path: &str) -> Result<String, Box<dyn Error>> {
         .output()
         .expect("Cannot run go-spacemesh version");
 
-    let version = String::from_utf8(output.stdout)?
-        .trim();
-    let trimmed = trim_version(version).to_string();
+    let version = String::from_utf8(output.stdout)?;
+    let trimmed = trim_version(version.trim()).to_string();
 
     Ok(trimmed)
 }
@@ -162,7 +195,30 @@ fn unzip_state_sql(archive_path: &str, output_path: &str) -> Result<(), Box<dyn 
         std::fs::create_dir_all(&p)?;
     }
     let mut outfile = File::create(&outpath)?;
-    std::io::copy(&mut state_sql, &mut outfile)?;
+
+    let total_size = state_sql.size();
+    let mut extracted_size: u64 = 0;
+    let mut buffer = [0; 4096];
+
+    let mut last_reported_progress: i64 = -1;
+
+    while let Ok(bytes_read) = state_sql.read(&mut buffer) {
+        if bytes_read == 0 {
+            break;
+        }
+        outfile.write_all(&buffer[..bytes_read])?;
+        extracted_size += bytes_read as u64;
+
+        let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
+        if last_reported_progress != progress {
+            last_reported_progress = progress;
+            println!("Unzipping... {}%", progress);
+        }
+    }
+    if last_reported_progress < 100 {
+        // Ensure that 100% will be printed
+        println!("Unzipping... 100%");
+    }
 
     Ok(())
 }
@@ -202,19 +258,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let final_file_str = final_file_path.to_str().expect("Cannot compose path");
             let backup_file_str = backup_file_path.to_str().expect("Cannot compose path");
 
-            let url = if redirect_file_path.exists() {
-                std::fs::read_to_string(redirect_file_str)?
+            if !archive_file_path.exists() {
+                println!("Downloading the latest database...");
+                let url = if redirect_file_path.exists() {
+                    std::fs::read_to_string(redirect_file_str)?
+                } else {
+                    let go_path = resolve_path(&go_spacemesh_path).unwrap();
+                    let go_path_str = go_path.to_str().expect("Cannot resolve path to go-spacemesh");
+                    format!("{}{}", &download_url, get_go_spacemesh_version(&go_path_str)?)
+                };
+
+                download_file(&url, temp_file_str, redirect_file_str).await?;
+
+                // Rename `state.download` -> `state.zip`
+                std::fs::rename(temp_file_str, archive_file_str)?;
+                println!("Archive downloaded!");
             } else {
-                let go_path = resolve_path(&go_spacemesh_path).unwrap();
-                let go_path_str = go_path.to_str().expect("Cannot resolve path to go-spacemesh");
-                format!("{}{}", &download_url, get_go_spacemesh_version(&go_path_str)?)
-            };
-
-            download_file(&url, temp_file_str, redirect_file_str).await?;
-            // TODO: Display a progress
-
-            // Rename `state.download` -> `state.zip`
-            std::fs::rename(temp_file_str, archive_file_str)?;
+                println!("Archive found...");
+            }
 
             if final_file_path.exists() {
                 println!("Renaming current state.sql file into state.sql.bak");
@@ -223,12 +284,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             
             // Unzip
-            println!("Unzipping downloaded archive");
             unzip_state_sql(archive_file_str, final_file_str)
                 .expect("Cannot unzip archive");
 
-            // TODO: Delete state.url
             // TODO: Download the checksum and validate (e.g. http://localhost:8080/abcdef.checksum)
+
+            std::fs::remove_file(redirect_file_str)?;
+            std::fs::remove_file(archive_file_str)?;
+
+            println!("Done!");
+            println!("Now you can run go-spacemesh as usually.");
 
             Ok(())
         }
