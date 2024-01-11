@@ -25,25 +25,25 @@ enum Commands {
     /// Checks if quicksync is recommended
     Check {
         /// Path to the node-data directory
-        #[clap(short, long)]
+        #[clap(short = 'd', long)]
         node_data: String,
         /// Genesis time in ISO format
-        #[clap(short, long, default_value = "2023-07-14T08:00:00Z")]
+        #[clap(short = 'g', long, default_value = "2023-07-14T08:00:00Z")]
         genesis_time: String,
         /// Layer duration
-        #[clap(short, long, default_value = "5m")]
+        #[clap(short = 'l', long, default_value = "5m")]
         layer_duration: String,
     },
     /// Downloads latest db from official website
     Download {
         /// Path to the node-data directory
-        #[clap(short, long)]
+        #[clap(short = 'd', long)]
         node_data: String,
         /// Path to go-spacemesh binary
-        #[clap(short, long, default_value = go_spacemesh_default_path())]
+        #[clap(short = 'p', long, default_value = go_spacemesh_default_path())]
         go_spacemesh_path: String,
-        /// URL to download from (without version at the end). Default: http://localhost:8000/
-        #[clap(short, long, default_value = "http://localhost:8000/")]
+        /// URL to download database from. Node version will be appended at the end
+        #[clap(short = 'u', long, default_value = "https://quicksync.spacemesh.network/")]
         download_url: String,
     },
 }
