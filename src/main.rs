@@ -104,6 +104,10 @@ async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Resul
     Ok(())
 }
 
+fn trim_version(version: &str) -> &str {
+    version.split('+').next().unwrap_or(version)
+}
+
 fn get_go_spacemesh_version(path: &str) -> Result<String, Box<dyn Error>> {
     let output = Command::new(path)
         .arg("version")
@@ -111,10 +115,10 @@ fn get_go_spacemesh_version(path: &str) -> Result<String, Box<dyn Error>> {
         .expect("Cannot run go-spacemesh version");
 
     let version = String::from_utf8(output.stdout)?
-        .trim()
-        .to_string();
+        .trim();
+    let trimmed = trim_version(version).to_string();
 
-    Ok(version)
+    Ok(trimmed)
 }
 
 fn resolve_path(relative_path: &str) -> Result<PathBuf, Box<dyn Error>> {
