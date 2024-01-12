@@ -7,7 +7,7 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::io::{Seek, SeekFrom, Write};
 use futures_util::StreamExt;
 
-pub async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Result<(), Box<dyn Error>> {
+pub async fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<(), Box<dyn Error>> {
   let path = Path::new(file_path);
 
   if let Some(dir) = path.parent() {
@@ -89,7 +89,7 @@ pub async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> R
   }
 }
 
-pub async fn download_with_retries(url: &str, file_path: &str, redirect_path: &str, max_retries: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn download_with_retries(url: &str, file_path: &Path, redirect_path: &Path, max_retries: u32) -> Result<(), Box<dyn std::error::Error>> {
   let mut attempts = 0;
 
   loop {

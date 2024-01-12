@@ -1,6 +1,6 @@
 use reqwest::Client;
 use url::Url;
-use std::{error::Error, fs::File, io, io::Read};
+use std::{error::Error, fs::File, io, io::Read, path::Path};
 
 use crate::utils::strip_trailing_newline;
 
@@ -28,7 +28,7 @@ pub async fn download_checksum(url: &str) -> Result<String, Box<dyn Error>> {
   }
 }
 
-pub fn calculate_checksum(file_path: &str) -> io::Result<String> {
+pub fn calculate_checksum(file_path: &Path) -> io::Result<String> {
   let mut file = File::open(file_path)?;
   let mut buffer = Vec::new();
   file.read_to_end(&mut buffer)?;

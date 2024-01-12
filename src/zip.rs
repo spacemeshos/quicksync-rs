@@ -4,7 +4,7 @@ use std::io::{Write, Read};
 use std::path::Path;
 use zip::ZipArchive;
 
-pub async fn unpack(archive_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
+pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 
