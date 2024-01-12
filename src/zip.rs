@@ -23,22 +23,34 @@ pub async fn unpack(archive_path: &str, output_path: &str) -> Result<(), Box<dyn
 
   let mut last_reported_progress: i64 = -1;
 
-  while let Ok(bytes_read) = state_sql.read(&mut buffer) {
-      if bytes_read == 0 {
-          break;
-      }
-      outfile.write_all(&buffer[..bytes_read])?;
-      extracted_size += bytes_read as u64;
+  loop {
+    match state_sql.read(&mut buffer) {
+        Ok(0) => {
+          if last_reported_progress != 100 {
+            last_reported_progress = 100;
+            println!("Unzipping... {}%", last_reported_progress);
+          }
+          break
+        },
+        Ok(bytes_read) => {
+            outfile.write_all(&buffer[..bytes_read])?;
+            extracted_size += bytes_read as u64;
 
-      let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
-      if last_reported_progress != progress {
-          last_reported_progress = progress;
-          println!("Unzipping... {}%", progress);
-      }
+            let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
+            if last_reported_progress != progress {
+                last_reported_progress = progress;
+                println!("Unzipping... {}%", progress);
+            }
+        }
+        Err(e) => return Err(Box::new(e)),
+    }
   }
+
   if last_reported_progress < 100 {
-      // Ensure that 100% will be printed
-      println!("Unzipping... 100%");
+    return Err(Box::new(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "Archive was not fully unpacked",
+    )));
   }
 
   Ok(())
