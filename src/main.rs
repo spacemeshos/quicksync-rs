@@ -1,19 +1,20 @@
-use chrono::{DateTime, Utc, Duration};
 use clap::{Parser, Subcommand};
-use duration_string::DurationString;
-use reqwest::{Client, header};
-use rusqlite::{Connection, params};
-use tokio::time::sleep;
-use url::{Url, ParseError};
-use zip::ZipArchive;
-use std::{env, io};
-use std::fs::{OpenOptions, create_dir_all, File};
-use std::io::{Seek, SeekFrom, Write, Read};
-use std::process::Command;
-use std::path::{PathBuf, Path};
+use std::path::PathBuf;
 use std::error::Error;
-use std::time::Instant;
-use futures_util::StreamExt;
+
+mod utils;
+mod checksum;
+mod download;
+mod sql;
+mod go_spacemesh;
+mod zip;
+
+use utils::*;
+use checksum::*;
+use download::download_with_retries;
+use sql::get_last_layer_from_db;
+use go_spacemesh::get_version;
+use zip::unpack;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -50,7 +51,6 @@ enum Commands {
     },
 }
 
-// Функция для определения пути по умолчанию в зависимости от ОС
 fn go_spacemesh_default_path() -> &'static str {
     #[cfg(target_os = "windows")]
     {
@@ -60,238 +60,6 @@ fn go_spacemesh_default_path() -> &'static str {
     {
         "./go-spacemesh"
     }
-}
-
-fn parse_iso_date(iso_date: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
-    iso_date.parse::<DateTime<Utc>>()
-}
-
-fn strip_trailing_newline(input: &str) -> &str {
-    input
-        .strip_suffix("\r\n")
-        .or(input.strip_suffix("\n"))
-        .unwrap_or(input)
-}
-
-async fn download_md5(url: &str) -> Result<String, Box<dyn Error>> {
-    let mut u = Url::parse(url)?;
-    u.path_segments_mut().expect("Wrong URL").pop().push("state.sql.md5");
-    let md5_url = u.to_string();
-
-    let client = Client::new();
-    let response = client.get(md5_url)
-        .send()
-        .await?;
-
-    if response.status().is_success() {
-        let md5 = response.text().await?;
-        let stripped = strip_trailing_newline(&md5);
-        Ok(stripped.to_string())
-    } else {
-        Err(
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Cannot download MD5 checksum"
-            ))
-        )
-    }
-}
-
-fn calculate_md5(file_path: &str) -> io::Result<String> {
-    let mut file = File::open(file_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    let hash = md5::compute(buffer);
-    Ok(format!("{:x}", hash))
-}
-
-async fn download_file(url: &str, file_path: &str, redirect_path: &str) -> Result<(), Box<dyn Error>> {
-    let path = Path::new(file_path);
-
-    if let Some(dir) = path.parent() {
-        create_dir_all(dir).expect("Cannot create directory");
-    }
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(file_path)
-        .expect("Cannot create file");
-
-    let file_size = file.metadata()?.len();
-
-    let client = Client::new();
-    let response = client.get(url)
-        .header("Range", format!("bytes={}-", file_size))
-        .send()
-        .await?;
-    let final_url = response.url().clone();
-
-    std::fs::write(redirect_path, final_url.as_str())?;
-
-    if response.status().is_success() {
-        let total_size = response
-            .headers()
-            .get(header::CONTENT_LENGTH)
-            .and_then(|ct_len| ct_len.to_str().ok())
-            .and_then(|ct_len| ct_len.parse::<u64>().ok())
-            .unwrap_or(0) + file_size;
-
-        file.seek(SeekFrom::End(0))?;
-        let mut stream = response.bytes_stream();
-        let start = Instant::now();
-
-        let mut downloaded: u64 = file_size;
-        let mut last_reported_progress: i64 = -1;
-
-        while let Some(item) = stream.next().await {
-            let chunk = item?;
-            file.write_all(&chunk)?;
-            downloaded += chunk.len() as u64;
-
-            let elapsed = start.elapsed().as_secs_f64();
-            let speed = if elapsed > 0.0 {
-                downloaded as f64 / elapsed
-            } else {
-                0.0
-            };
-            let eta = if speed > 0.0 {
-                (total_size as f64 - downloaded as f64) / speed
-            } else {
-                0.0
-            };
-
-            let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
-            if progress > last_reported_progress {
-                println!("Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
-                    progress,
-                    downloaded as f64 / 1_024_000.0,
-                    total_size as f64 / 1_024_000.0,
-                    eta);
-                last_reported_progress = progress;
-            }
-        }
-        Ok(())
-    } else {
-        let err_message = format!("Cannot download: {:?}", response.status());
-
-        std::fs::remove_file(redirect_path)?;
-        std::fs::remove_file(file_path)?;
-        Err(
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                err_message
-            ))
-        )
-    }
-}
-
-async fn download_with_retries(url: &str, file_path: &str, redirect_path: &str, max_retries: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let mut attempts = 0;
-
-    loop {
-        match download_file(url, file_path, redirect_path).await {
-            Ok(()) => return Ok(()),
-            Err(e) if attempts < max_retries => {
-                eprintln!("Download error: {}. Attemmpt {} / {}", e, attempts + 1, max_retries);
-                attempts += 1;
-                sleep(std::time::Duration::from_secs(5)).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-}
-
-fn trim_version(version: &str) -> &str {
-    version.split('+').next().unwrap_or(version)
-}
-
-fn get_go_spacemesh_version(path: &str) -> Result<String, Box<dyn Error>> {
-    let output = Command::new(path)
-        .arg("version")
-        .output()
-        .expect("Cannot run go-spacemesh version");
-
-    let version = String::from_utf8(output.stdout)?;
-    let trimmed = trim_version(version.trim()).to_string();
-
-    Ok(trimmed)
-}
-
-fn resolve_path(relative_path: &str) -> Result<PathBuf, Box<dyn Error>> {
-    let current_dir = env::current_dir()?;
-    let resolved_path = current_dir.join(relative_path);
-    Ok(resolved_path)
-}
-
-fn get_last_layer_from_db(db_path: &str) -> Result<i32, Box<dyn Error>> {
-    let conn = Connection::open(db_path)?;
-
-    let mut stmt = conn.prepare("SELECT * FROM layers ORDER BY id DESC LIMIT 1")?;
-    let mut layer_iter = stmt.query_map(params![], |row| {
-        Ok(row.get::<_, i32>(0)?)
-    })?;
-
-    if let Some(result) = layer_iter.next() {
-        let last_id = result?;
-        Ok(last_id)
-    } else {
-        Ok(0)
-    }
-}
-
-fn calculate_latest_layer(genesis_time: String, layer_duration: String) -> Result<i64, Box<dyn Error>> {
-    let genesis = parse_iso_date(&genesis_time)?;
-    let delta = Utc::now() - genesis;
-    let dur = Duration::from_std(DurationString::from_string(layer_duration)?.into())?;
-    Ok(delta.num_milliseconds() / dur.num_milliseconds())
-}
-
-async fn unzip_state_sql(archive_path: &str, output_path: &str) -> Result<(), Box<dyn Error>> {
-    let file = File::open(archive_path)?;
-    let mut zip = ZipArchive::new(file)?;
-
-    let mut state_sql = zip.by_name("state.sql")
-        .expect("State.sql file not found in archive");
-    let outpath = Path::new(output_path);
-
-    if let Some(p) = outpath.parent() {
-        std::fs::create_dir_all(&p)?;
-    }
-    let mut outfile = File::create(&outpath)?;
-
-    let total_size = state_sql.size();
-    let mut extracted_size: u64 = 0;
-    let mut buffer = [0; 4096];
-
-    let mut last_reported_progress: i64 = -1;
-
-    while let Ok(bytes_read) = state_sql.read(&mut buffer) {
-        if bytes_read == 0 {
-            break;
-        }
-        outfile.write_all(&buffer[..bytes_read])?;
-        extracted_size += bytes_read as u64;
-
-        let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
-        if last_reported_progress != progress {
-            last_reported_progress = progress;
-            println!("Unzipping... {}%", progress);
-        }
-    }
-    if last_reported_progress < 100 {
-        // Ensure that 100% will be printed
-        println!("Unzipping... 100%");
-    }
-
-    Ok(())
-}
-
-fn build_url(base: &str, path: &str) -> Result<Url, ParseError> {
-    let mut url = Url::parse(base)?;
-    url.path_segments_mut().expect("cannot be base").extend(path.split('/'));
-    Ok(url)
 }
 
 #[tokio::main]
@@ -337,7 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 } else {
                     let go_path = resolve_path(&go_spacemesh_path).unwrap();
                     let go_path_str = go_path.to_str().expect("Cannot resolve path to go-spacemesh");
-                    let path = format!("{}/state.zip", &get_go_spacemesh_version(&go_path_str)?);
+                    let path = format!("{}/state.zip", &get_version(&go_path_str)?);
                     let url = build_url(&download_url, &path)?;
                     url.to_string()
                 };
@@ -360,7 +128,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             
             // Unzip
-            unzip_state_sql(archive_file_str, final_file_str)
+            unpack(archive_file_str, final_file_str)
                 .await
                 .expect("Cannot unzip archive");
 
@@ -368,8 +136,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let archive_url = String::from_utf8(
                 std::fs::read(redirect_file_str).expect("Cannot read state.url")
             )?;
-            let md5_expected = download_md5(&archive_url).await.expect("Cannot download md5");
-            let md5_actual = calculate_md5(final_file_str).expect("Cannot calculate md5");
+            let md5_expected = download_checksum(&archive_url).await.expect("Cannot download md5");
+            let md5_actual = calculate_checksum(final_file_str).expect("Cannot calculate md5");
 
             assert_eq!(
                 md5_actual, md5_expected,
