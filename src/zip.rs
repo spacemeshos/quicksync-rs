@@ -1,15 +1,14 @@
 use std::fs::File;
-use std::error::Error;
-use std::io::{Write, Read};
+use std::io::{Write, Read, Error};
 use std::path::Path;
 use zip::ZipArchive;
 
-pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Box<dyn Error>> {
+pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error> {
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 
   let mut state_sql = zip.by_name("state.sql")
-      .expect("State.sql file not found in archive");
+    .map_err(|e| Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
   let outpath = Path::new(output_path);
 
   if let Some(p) = outpath.parent() {
@@ -30,7 +29,7 @@ pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Box<d
             last_reported_progress = 100;
             println!("Unzipping... {}%", last_reported_progress);
           }
-          break
+          break;
         },
         Ok(bytes_read) => {
             outfile.write_all(&buffer[..bytes_read])?;
@@ -42,15 +41,15 @@ pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Box<d
                 println!("Unzipping... {}%", progress);
             }
         }
-        Err(e) => return Err(Box::new(e)),
+        Err(e) => return Err(e),
     }
   }
 
   if last_reported_progress < 100 {
-    return Err(Box::new(std::io::Error::new(
+    return Err(std::io::Error::new(
         std::io::ErrorKind::InvalidData,
         "Archive was not fully unpacked",
-    )));
+    ));
   }
 
   Ok(())
