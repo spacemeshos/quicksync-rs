@@ -1,0 +1,142 @@
+on:
+  pull_request:
+  push:
+    tags:
+      - 'v*'
+
+name: CI
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@1.74.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-features
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@1.74.1
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          components: clippy
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Annotate commit with clippy warnings
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features --workspace
+
+  build:
+    name: Build library
+    runs-on: ${{ matrix.os }}
+    needs:
+      - fmt
+      - clippy
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact-name: linux
+
+          - os: [self-hosted, linux, arm64]
+            artifact-name: linux-arm64
+
+          - os: [self-hosted, macos, arm64]
+            artifact-name: macos-m1
+
+          - os: macos-latest
+            artifact-name: macos
+
+          - os: windows-2019
+            artifact-name: windows
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@1.74.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ join( matrix.os, '-' ) }}
+
+      - name: Version suffix (for release only)
+        id: version
+        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}" >> $GITHUB_OUTPUT
+
+      - name: Install SQLite3 (Linux Arm64)
+        if: matrix.artifact-name == 'linux-arm64'
+        run: sudo apt-get install libsqlite3-dev
+
+      - name: Install SQLite3 (Windows)
+        if: matrix.artifact-name == 'windows'
+        run: |
+          choco install -y wget
+          cd C:\
+          mkdir lib
+          cd lib
+          wget https://github.com/buggins/ddbc/raw/master/libs/win64/sqlite3.lib
+          echo "LIB=C:\lib" >> $env:GITHUB_ENV
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: quicksync-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          path: |
+            target/release/quicksync${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+      - name: List artifacts
+        run: ls -R ./artifacts
+      - name: Create a draft release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: true
+          prerelease: false
+      - name: Pack artifacts
+        run: >
+          mkdir ./assets;
+          for dir in ./artifacts/*/; do
+            zip -o -j -r "./assets/$(basename "$dir")-$TAG.zip" "$dir";
+          done
+        env:
+          TAG: ${{ github.ref_name }}
+      - name: Upload Release Assets
+        run: gh release upload $TAG ./assets/*.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
