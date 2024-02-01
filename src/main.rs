@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
           let go_path_str = go_path
             .to_str()
             .expect("Cannot resolve path to go-spacemesh");
-          let path = format!("{}/state.zip", &get_version(&go_path_str)?);
+          let path = format!("{}/state.zip", &get_version(go_path_str)?);
           let url = build_url(&download_url, &path)?;
           url.to_string()
         };
@@ -173,7 +173,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
           process::exit(4);
         }
         Err(e) => {
-          println!("Cannot verify checksum: {}", e.to_string());
+          println!("Cannot verify checksum: {}", e);
           process::exit(5);
         }
       }
@@ -186,7 +186,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             println!("File backed up to: {}", backup_name);
           }
           Err(e) => {
-            println!("Cannot create a backup file: {}", e.to_string())
+            println!("Cannot create a backup file: {}", e)
           }
         }
       }

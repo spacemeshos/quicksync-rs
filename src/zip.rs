@@ -13,9 +13,9 @@ pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error
   let outpath = Path::new(output_path);
 
   if let Some(p) = outpath.parent() {
-    std::fs::create_dir_all(&p)?;
+    std::fs::create_dir_all(p)?;
   }
-  let mut outfile = File::create(&outpath)?;
+  let mut outfile = File::create(outpath)?;
 
   let total_size = state_sql.size();
   let mut extracted_size: u64 = 0;

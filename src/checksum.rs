@@ -62,14 +62,14 @@ pub async fn verify(
   redirect_file_path: &Path,
   unpacked_file_path: &Path,
 ) -> Result<bool, std::io::Error> {
-  let archive_url_str = String::from_utf8(std::fs::read(&redirect_file_path)?)
+  let archive_url_str = String::from_utf8(std::fs::read(redirect_file_path)?)
     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
   let archive_url = Url::parse(&archive_url_str)
     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
   let md5_expected = download_checksum(&archive_url).await?;
-  let md5_actual = calculate_checksum(&unpacked_file_path)?;
+  let md5_actual = calculate_checksum(unpacked_file_path)?;
 
   Ok(md5_actual == md5_expected)
 }
