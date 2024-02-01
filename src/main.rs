@@ -1,31 +1,31 @@
 use chrono::Duration;
 use clap::{Parser, Subcommand};
-use url::Url;
-use std::path::PathBuf;
 use std::error::Error;
+use std::path::PathBuf;
 use std::process;
+use url::Url;
 
-mod utils;
 mod checksum;
 mod download;
-mod sql;
 mod go_spacemesh;
-mod zip;
 mod parsers;
+mod sql;
+mod utils;
+mod zip;
 
-use utils::*;
 use checksum::*;
 use download::download_with_retries;
-use sql::get_last_layer_from_db;
 use go_spacemesh::get_version;
-use zip::unpack;
 use parsers::*;
+use sql::get_last_layer_from_db;
+use utils::*;
+use zip::unpack;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Cli {
-    #[clap(subcommand)]
-    command: Commands,
+  #[clap(subcommand)]
+  command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
@@ -51,7 +51,11 @@ enum Commands {
     #[clap(short = 'g', long, default_value = go_spacemesh_default_path())]
     go_spacemesh_path: PathBuf,
     /// URL to download database from. Node version will be appended at the end
-    #[clap(short = 'u', long, default_value = "https://quicksync.spacemesh.network/")]
+    #[clap(
+      short = 'u',
+      long,
+      default_value = "https://quicksync.spacemesh.network/"
+    )]
     download_url: Url,
     /// Maximum retries amount for downloading (or resuming download) if something went wrong
     #[clap(short = 'r', long, default_value = "5")]
@@ -75,7 +79,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
   let cli = Cli::parse();
 
   match cli.command {
-    Commands::Check { node_data, genesis_time, layer_duration } => {
+    Commands::Check {
+      node_data,
+      genesis_time,
+      layer_duration,
+    } => {
       let dir_path = node_data.clone();
       let db_file_path = dir_path.join("state.sql");
       let db_file_str = db_file_path.to_str().expect("Cannot compose path");
@@ -85,13 +93,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
       println!("Latest layer in db: {}", db_layer);
       println!("Latest calculated layer: {}", time_layer);
       if time_layer - db_layer > 100 {
-          println!("Too far behind");
+        println!("Too far behind");
       } else {
-          println!("OK!");
+        println!("OK!");
       }
       Ok(())
     }
-    Commands::Download { node_data, go_spacemesh_path, download_url, max_retries } => {
+    Commands::Download {
+      node_data,
+      go_spacemesh_path,
+      download_url,
+      max_retries,
+    } => {
       let dir_path = node_data;
       let temp_file_path = dir_path.join("state.download");
       let redirect_file_path = dir_path.join("state.url");
@@ -106,14 +119,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
           std::fs::read_to_string(&redirect_file_path)?
         } else {
           let go_path = resolve_path(&go_spacemesh_path).unwrap();
-          let go_path_str = go_path.to_str().expect("Cannot resolve path to go-spacemesh");
+          let go_path_str = go_path
+            .to_str()
+            .expect("Cannot resolve path to go-spacemesh");
           let path = format!("{}/state.zip", &get_version(&go_path_str)?);
           let url = build_url(&download_url, &path)?;
           url.to_string()
         };
 
-        if let Err(e) = download_with_retries(&url, &temp_file_path, &redirect_file_path, max_retries).await {
-          eprintln!("Failed to download a file after {} attempts: {}", max_retries, e);
+        if let Err(e) =
+          download_with_retries(&url, &temp_file_path, &redirect_file_path, max_retries).await
+        {
+          eprintln!(
+            "Failed to download a file after {} attempts: {}",
+            max_retries, e
+          );
           process::exit(1);
         }
 
@@ -121,12 +141,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
       }
-      
+
       // Unzip
       match unpack(&archive_file_path, &unpacked_file_path).await {
         Ok(_) => {
           println!("Archive unpacked successfully");
-        },
+        }
         Err(e) if e.raw_os_error() == Some(28) => {
           println!("Cannot unpack archive: not enough disk space");
           std::fs::remove_file(&unpacked_file_path)?;
@@ -170,7 +190,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
           }
         }
       }
-      std::fs::rename(&unpacked_file_path, &final_file_path).expect("Cannot rename downloaded file into state.sql");
+      std::fs::rename(&unpacked_file_path, &final_file_path)
+        .expect("Cannot rename downloaded file into state.sql");
 
       std::fs::remove_file(&redirect_file_path)?;
       std::fs::remove_file(&archive_file_path)?;

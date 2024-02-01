@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Write, Read, Error};
+use std::io::{Error, Read, Write};
 use std::path::Path;
 use zip::ZipArchive;
 
@@ -7,12 +7,13 @@ pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 
-  let mut state_sql = zip.by_name("state.sql")
+  let mut state_sql = zip
+    .by_name("state.sql")
     .map_err(|e| Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
   let outpath = Path::new(output_path);
 
   if let Some(p) = outpath.parent() {
-      std::fs::create_dir_all(&p)?;
+    std::fs::create_dir_all(&p)?;
   }
   let mut outfile = File::create(&outpath)?;
 
@@ -24,31 +25,31 @@ pub async fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error
 
   loop {
     match state_sql.read(&mut buffer) {
-        Ok(0) => {
-          if last_reported_progress != 100 {
-            last_reported_progress = 100;
-            println!("Unzipping... {}%", last_reported_progress);
-          }
-          break;
-        },
-        Ok(bytes_read) => {
-            outfile.write_all(&buffer[..bytes_read])?;
-            extracted_size += bytes_read as u64;
-
-            let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
-            if last_reported_progress != progress {
-                last_reported_progress = progress;
-                println!("Unzipping... {}%", progress);
-            }
+      Ok(0) => {
+        if last_reported_progress != 100 {
+          last_reported_progress = 100;
+          println!("Unzipping... {}%", last_reported_progress);
         }
-        Err(e) => return Err(e),
+        break;
+      }
+      Ok(bytes_read) => {
+        outfile.write_all(&buffer[..bytes_read])?;
+        extracted_size += bytes_read as u64;
+
+        let progress = (extracted_size as f64 / total_size as f64 * 100.0).round() as i64;
+        if last_reported_progress != progress {
+          last_reported_progress = progress;
+          println!("Unzipping... {}%", progress);
+        }
+      }
+      Err(e) => return Err(e),
     }
   }
 
   if last_reported_progress < 100 {
     return Err(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        "Archive was not fully unpacked",
+      std::io::ErrorKind::InvalidData,
+      "Archive was not fully unpacked",
     ));
   }
 

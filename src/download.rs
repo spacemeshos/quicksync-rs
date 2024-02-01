@@ -1,16 +1,20 @@
-use reqwest::{Client, header};
-use tokio::time::sleep;
+use futures_util::StreamExt;
+use reqwest::{header, Client};
 use std::collections::VecDeque;
 use std::error::Error;
+use std::fs::{create_dir_all, OpenOptions};
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Instant;
-use std::fs::{OpenOptions, create_dir_all};
-use std::io::{Seek, SeekFrom, Write};
-use futures_util::StreamExt;
+use tokio::time::sleep;
 
-pub async fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<(), Box<dyn Error>> {
+pub async fn download_file(
+  url: &str,
+  file_path: &Path,
+  redirect_path: &Path,
+) -> Result<(), Box<dyn Error>> {
   if let Some(dir) = file_path.parent() {
-      create_dir_all(dir)?;
+    create_dir_all(dir)?;
   }
 
   let mut file = OpenOptions::new()
@@ -22,7 +26,8 @@ pub async fn download_file(url: &str, file_path: &Path, redirect_path: &Path) ->
   let file_size = file.metadata()?.len();
 
   let client = Client::new();
-  let response = client.get(url)
+  let response = client
+    .get(url)
     .header("Range", format!("bytes={}-", file_size))
     .send()
     .await?;
@@ -35,20 +40,19 @@ pub async fn download_file(url: &str, file_path: &Path, redirect_path: &Path) ->
 
     std::fs::remove_file(redirect_path)?;
     std::fs::remove_file(file_path)?;
-    return Err(
-      Box::new(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        err_message
-      ))
-    );
+    return Err(Box::new(std::io::Error::new(
+      std::io::ErrorKind::NotFound,
+      err_message,
+    )));
   }
 
   let total_size = response
-      .headers()
-      .get(header::CONTENT_LENGTH)
-      .and_then(|ct_len| ct_len.to_str().ok())
-      .and_then(|ct_len| ct_len.parse::<u64>().ok())
-      .unwrap_or(0) + file_size;
+    .headers()
+    .get(header::CONTENT_LENGTH)
+    .and_then(|ct_len| ct_len.to_str().ok())
+    .and_then(|ct_len| ct_len.parse::<u64>().ok())
+    .unwrap_or(0)
+    + file_size;
 
   file.seek(SeekFrom::End(0))?;
   let mut stream = response.bytes_stream();
@@ -82,27 +86,39 @@ pub async fn download_file(url: &str, file_path: &Path, redirect_path: &Path) ->
 
     let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
     if progress > last_reported_progress {
-      println!("Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
+      println!(
+        "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
         progress,
         downloaded as f64 / 1_024_000.00,
         total_size as f64 / 1_024_000.00,
-        eta);
+        eta
+      );
       last_reported_progress = progress;
     }
   }
   Ok(())
 }
 
-pub async fn download_with_retries(url: &str, file_path: &Path, redirect_path: &Path, max_retries: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn download_with_retries(
+  url: &str,
+  file_path: &Path,
+  redirect_path: &Path,
+  max_retries: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
   let mut attempts = 0;
 
   loop {
     match download_file(url, file_path, redirect_path).await {
       Ok(()) => return Ok(()),
       Err(e) if attempts < max_retries => {
-          eprintln!("Download error: {}. Attemmpt {} / {}", e, attempts + 1, max_retries);
-          attempts += 1;
-          sleep(std::time::Duration::from_secs(5)).await;
+        eprintln!(
+          "Download error: {}. Attemmpt {} / {}",
+          e,
+          attempts + 1,
+          max_retries
+        );
+        attempts += 1;
+        sleep(std::time::Duration::from_secs(5)).await;
       }
       Err(e) => return Err(e),
     }
