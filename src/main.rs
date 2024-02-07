@@ -73,9 +73,7 @@ fn go_spacemesh_default_path() -> &'static str {
     "./go-spacemesh"
   }
 }
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
   let cli = Cli::parse();
 
   match cli.command {
@@ -84,20 +82,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
       genesis_time,
       layer_duration,
     } => {
-      let dir_path = node_data.clone();
-      let db_file_path = dir_path.join("state.sql");
-      let db_file_str = db_file_path.to_str().expect("Cannot compose path");
-      println!("Checking database: {}", &db_file_str);
-      let db_layer = i64::from(get_last_layer_from_db(db_file_str)?);
-      let time_layer = calculate_latest_layer(genesis_time, layer_duration)?;
-      println!("Latest layer in db: {}", db_layer);
-      println!("Latest calculated layer: {}", time_layer);
-      if time_layer - db_layer > 100 {
-        println!("Too far behind");
-      } else {
-        println!("OK!");
+      let result = {
+        let dir_path = node_data.clone();
+        let db_file_path = dir_path.join("state.sql");
+        let db_file_str = db_file_path.to_str().expect("Cannot compose path");
+        println!("Checking database: {}", db_file_str);
+        let db_layer = if db_file_path.exists() {
+          i64::from(get_last_layer_from_db(&db_file_path)?)
+        } else {
+          0
+        };
+        let time_layer = calculate_latest_layer(genesis_time, layer_duration)?;
+        println!("Latest layer in db: {}", db_layer);
+        println!("Latest calculated layer: {}", time_layer);
+        if db_layer == 0 {
+          println!("Database file is not found");
+        } else if time_layer - db_layer > 100 {
+          println!("Too far behind");
+        } else {
+          println!("OK!");
+        }
+        Ok(())
+      };
+      if result.is_err() {
+        process::exit(1);
       }
-      Ok(())
+      result
     }
     Commands::Download {
       node_data,
@@ -128,7 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
 
         if let Err(e) =
-          download_with_retries(&url, &temp_file_path, &redirect_file_path, max_retries).await
+          download_with_retries(&url, &temp_file_path, &redirect_file_path, max_retries)
         {
           eprintln!(
             "Failed to download a file after {} attempts: {}",
@@ -143,7 +153,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
       }
 
       // Unzip
-      match unpack(&archive_file_path, &unpacked_file_path).await {
+      match unpack(&archive_file_path, &unpacked_file_path) {
         Ok(_) => {
           println!("Archive unpacked successfully");
         }
@@ -162,7 +172,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
       // Verify checksum
       println!("Verifying MD5 checksum...");
-      match verify(&redirect_file_path, &unpacked_file_path).await {
+      match verify(&redirect_file_path, &unpacked_file_path) {
         Ok(true) => {
           println!("Checksum is valid");
         }
