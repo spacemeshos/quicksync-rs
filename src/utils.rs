@@ -1,5 +1,6 @@
+use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use std::{env, error::Error, path::PathBuf};
+use std::{env, path::PathBuf};
 use url::{ParseError, Url};
 
 pub fn strip_trailing_newline(input: &str) -> &str {
@@ -9,12 +10,12 @@ pub fn strip_trailing_newline(input: &str) -> &str {
 pub fn calculate_latest_layer(
   genesis_time: DateTime<Utc>,
   layer_duration: Duration,
-) -> Result<i64, Box<dyn Error>> {
+) -> Result<i64> {
   let delta = Utc::now() - genesis_time;
   Ok(delta.num_milliseconds() / layer_duration.num_milliseconds())
 }
 
-pub fn resolve_path(relative_path: &PathBuf) -> Result<PathBuf, Box<dyn Error>> {
+pub fn resolve_path(relative_path: &PathBuf) -> Result<PathBuf> {
   let current_dir = env::current_dir()?;
   let resolved_path = current_dir.join(relative_path);
   Ok(resolved_path)
@@ -33,12 +34,9 @@ pub fn build_url(base: &Url, path: &str) -> Result<Url, ParseError> {
   Ok(url)
 }
 
-pub fn backup_file(original_path: &PathBuf) -> Result<PathBuf, std::io::Error> {
+pub fn backup_file(original_path: &PathBuf) -> Result<PathBuf> {
   if !original_path.exists() {
-    return Err(std::io::Error::new(
-      std::io::ErrorKind::InvalidInput,
-      "No file to make a backup",
-    ));
+    anyhow::bail!("No file to make a backup");
   }
 
   let mut backup_path = original_path.with_extension("sql.bak");

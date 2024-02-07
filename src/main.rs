@@ -1,6 +1,5 @@
 use chrono::Duration;
 use clap::{Parser, Subcommand};
-use std::error::Error;
 use std::path::PathBuf;
 use std::process;
 use url::Url;
@@ -73,7 +72,7 @@ fn go_spacemesh_default_path() -> &'static str {
     "./go-spacemesh"
   }
 }
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
   let cli = Cli::parse();
 
   match cli.command {
@@ -157,12 +156,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(_) => {
           println!("Archive unpacked successfully");
         }
-        Err(e) if e.raw_os_error() == Some(28) => {
-          println!("Cannot unpack archive: not enough disk space");
-          std::fs::remove_file(&unpacked_file_path)?;
-          process::exit(2);
-        }
         Err(e) => {
+          if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            if io_err.raw_os_error() == Some(28) {
+              println!("Cannot unpack archive: not enough disk space");
+              std::fs::remove_file(&unpacked_file_path)?;
+              process::exit(2);
+            }
+          }
           println!("Cannot unpack archive: {}", e);
           std::fs::remove_file(&unpacked_file_path)?;
           std::fs::remove_file(&archive_file_path)?;

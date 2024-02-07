@@ -1,9 +1,10 @@
+use anyhow::Result;
 use std::fs::File;
 use std::io::{Error, Read, Write};
 use std::path::Path;
 use zip::ZipArchive;
 
-pub fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error> {
+pub fn unpack(archive_path: &Path, output_path: &Path) -> Result<()> {
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 
@@ -42,15 +43,12 @@ pub fn unpack(archive_path: &Path, output_path: &Path) -> Result<(), Error> {
           println!("Unzipping... {}%", progress);
         }
       }
-      Err(e) => return Err(e),
+      Err(e) => anyhow::bail!(e),
     }
   }
 
   if last_reported_progress < 100 {
-    return Err(std::io::Error::new(
-      std::io::ErrorKind::InvalidData,
-      "Archive was not fully unpacked",
-    ));
+    anyhow::bail!("Archive was not fully unpacked");
   }
 
   Ok(())

@@ -1,42 +1,38 @@
-use reqwest::blocking::Client;
+use anyhow::Result;
+use reqwest::blocking::{Client, Response};
 use std::{
-    fs::File,
-    io::{self, BufReader, BufRead, Error},
-    path::Path,
+  fs::File,
+  io::{BufRead, BufReader},
+  path::Path,
 };
 use url::Url;
 
 use crate::utils::strip_trailing_newline;
 
-pub fn download_checksum(url: &Url) -> Result<String, Error> {
-    let mut u = url.clone();
-    u.path_segments_mut()
-        .expect("Wrong URL")
-        .pop()
-        .push("state.sql.md5");
-    let md5_url = u.to_string();
+pub fn download_checksum(url: &Url) -> Result<String> {
+  let mut u = url.clone();
+  u.path_segments_mut()
+    .expect("Wrong URL")
+    .pop()
+    .push("state.sql.md5");
+  let md5_url = u.to_string();
 
-    let client = Client::new();
-    let response = client
-        .get(md5_url)
-        .send()
-        .map_err(|e| Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+  let client = Client::new();
+  let response: Response = client.get(md5_url).send()?;
 
-    if response.status().is_success() {
-        let md5 = response
-            .text()
-            .map_err(|e| Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        let stripped = strip_trailing_newline(&md5);
-        Ok(stripped.to_string())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Cannot download MD5 checksum",
-        ))
-    }
+  if response.status().is_success() {
+    let md5 = response.text()?;
+    let stripped = strip_trailing_newline(&md5);
+    Ok(stripped.to_string())
+  } else {
+    anyhow::bail!(
+      "Cannot download MD5 checksum: status code is {:?}",
+      response.status()
+    );
+  }
 }
 
-pub fn calculate_checksum(file_path: &Path) -> io::Result<String> {
+pub fn calculate_checksum(file_path: &Path) -> Result<String> {
   let file = File::open(file_path)?;
   let mut reader = BufReader::with_capacity(16 * 1024 * 1024, file);
   let mut hasher = md5::Context::new();
@@ -55,15 +51,10 @@ pub fn calculate_checksum(file_path: &Path) -> io::Result<String> {
   Ok(format!("{:x}", hash))
 }
 
-pub fn verify(
-  redirect_file_path: &Path,
-  unpacked_file_path: &Path,
-) -> Result<bool, std::io::Error> {
-  let archive_url_str = String::from_utf8(std::fs::read(redirect_file_path)?)
-      .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+pub fn verify(redirect_file_path: &Path, unpacked_file_path: &Path) -> Result<bool> {
+  let archive_url_str = String::from_utf8(std::fs::read(redirect_file_path)?)?;
 
-  let archive_url = Url::parse(&archive_url_str)
-      .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+  let archive_url = Url::parse(&archive_url_str)?;
 
   let md5_expected = download_checksum(&archive_url)?;
   let md5_actual = calculate_checksum(unpacked_file_path)?;

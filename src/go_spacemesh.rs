@@ -1,9 +1,9 @@
-use std::error::Error;
+use anyhow::Result;
 use std::process::Command;
 
 use crate::utils::trim_version;
 
-pub fn get_version(path: &str) -> Result<String, Box<dyn Error>> {
+pub fn get_version(path: &str) -> Result<String> {
   let output = Command::new(path).arg("version").output()?;
 
   let version = String::from_utf8(output.stdout)?;
