@@ -96,10 +96,6 @@ fn main() -> anyhow::Result<()> {
         println!("Latest calculated layer: {}", time_layer);
         if db_layer == 0 {
           println!("Database file is not found");
-        } else if time_layer - db_layer > 100 {
-          println!("Too far behind");
-        } else {
-          println!("OK!");
         }
         Ok(())
       };
