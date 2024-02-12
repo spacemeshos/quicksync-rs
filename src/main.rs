@@ -27,6 +27,8 @@ struct Cli {
   command: Commands,
 }
 
+const DEFAULT_DOWNLOAD_URL: &str = "https://quicksync.spacemesh.network/";
+
 #[derive(Subcommand, Debug)]
 enum Commands {
   /// Checks if quicksync is recommended
@@ -35,11 +37,21 @@ enum Commands {
     #[clap(short = 'd', long)]
     node_data: PathBuf,
     /// Genesis time in ISO format
-    #[clap(short = 'g', long, default_value = "2023-07-14T08:00:00Z")]
+    #[clap(short = 't', long, default_value = "2023-07-14T08:00:00Z")]
     genesis_time: chrono::DateTime<chrono::Utc>,
     /// Layer duration
     #[clap(short = 'l', long, default_value = "5m", value_parser = parse_duration)]
     layer_duration: Duration,
+    /// Path to go-spacemesh binary
+    #[clap(short = 'g', long, default_value = go_spacemesh_default_path())]
+    go_spacemesh_path: PathBuf,
+    /// URL to download database from. Node version will be appended at the end
+    #[clap(
+      short = 'u',
+      long,
+      default_value = DEFAULT_DOWNLOAD_URL
+    )]
+    download_url: Url,
   },
   /// Downloads latest db from official website
   Download {
@@ -53,7 +65,7 @@ enum Commands {
     #[clap(
       short = 'u',
       long,
-      default_value = "https://quicksync.spacemesh.network/"
+      default_value = DEFAULT_DOWNLOAD_URL
     )]
     download_url: Url,
     /// Maximum retries amount for downloading (or resuming download) if something went wrong
@@ -80,6 +92,8 @@ fn main() -> anyhow::Result<()> {
       node_data,
       genesis_time,
       layer_duration,
+      go_spacemesh_path,
+      download_url,
     } => {
       let result = {
         let dir_path = node_data.clone();
@@ -91,12 +105,21 @@ fn main() -> anyhow::Result<()> {
         } else {
           0
         };
-        let time_layer = calculate_latest_layer(genesis_time, layer_duration)?;
-        println!("Latest layer in db: {}", db_layer);
-        println!("Latest calculated layer: {}", time_layer);
         if db_layer == 0 {
           println!("Database file is not found");
         }
+        println!("Latest layer in db: {}", db_layer);
+
+        let time_layer = calculate_latest_layer(genesis_time, layer_duration)?;
+        println!("Current network layer: {}", time_layer);
+
+        let go_path = resolve_path(&go_spacemesh_path).unwrap();
+        let go_path_str = go_path
+          .to_str()
+          .expect("Cannot resolve path to go-spacemesh");
+        let go_version = get_version(&go_path_str)?;
+        let quicksync_layer = fetch_latest_available_layer(&download_url, &go_version)?;
+        println!("Latest layer in cloud: {}", quicksync_layer);
         Ok(())
       };
       if result.is_err() {
