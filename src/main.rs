@@ -69,7 +69,7 @@ enum Commands {
     )]
     download_url: Url,
     /// Maximum retries amount for downloading (or resuming download) if something went wrong
-    #[clap(short = 'r', long, default_value = "5")]
+    #[clap(short = 'r', long, default_value = "10")]
     max_retries: u32,
   },
 }
@@ -186,6 +186,7 @@ fn main() -> anyhow::Result<()> {
           eprintln!("Cannot unpack archive: {}", e);
           std::fs::remove_file(&unpacked_file_path)?;
           std::fs::remove_file(&archive_file_path)?;
+          std::fs::remove_file(&redirect_file_path)?;
           process::exit(3);
         }
       }
@@ -200,6 +201,7 @@ fn main() -> anyhow::Result<()> {
           eprintln!("MD5 checksums are not equal. Deleting archive and unpacked state.sql");
           std::fs::remove_file(&unpacked_file_path)?;
           std::fs::remove_file(&archive_file_path)?;
+          std::fs::remove_file(&redirect_file_path)?;
           process::exit(4);
         }
         Err(e) => {

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use reqwest::blocking::Client;
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
@@ -56,40 +56,47 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
   let mut measurements = VecDeque::with_capacity(10);
 
   let mut buffer = [0; 16 * 1024];
-  while let Ok(bytes_read) = response.read(&mut buffer) {
-    if bytes_read == 0 {
-      break;
-    }
-    file.write_all(&buffer[..bytes_read])?;
-    downloaded += bytes_read as u64;
-
-    let elapsed = start.elapsed().as_secs_f64();
-    let speed = if elapsed > 0.0 {
-      downloaded as f64 / elapsed
-    } else {
-      0.0
-    };
-    measurements.push_back(speed);
-    if measurements.len() > 10 {
-      measurements.pop_front();
-    }
-    let avg_speed = measurements.iter().sum::<f64>() / measurements.len() as f64;
-    let eta = if avg_speed > 0.0 {
-      (total_size as f64 - downloaded as f64) / avg_speed
-    } else {
-      0.0
-    };
-
-    let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
-    if progress > last_reported_progress {
-      println!(
-        "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
-        progress,
-        downloaded as f64 / 1_024_000.00,
-        total_size as f64 / 1_024_000.00,
-        eta
-      );
-      last_reported_progress = progress;
+  loop {
+    match response.read(&mut buffer) {
+      Ok(0) => {
+        break;
+      }
+      Ok(bytes_read) => {
+        file.write_all(&buffer[..bytes_read])?;
+        downloaded += bytes_read as u64;
+    
+        let elapsed = start.elapsed().as_secs_f64();
+        let speed = if elapsed > 0.0 {
+          downloaded as f64 / elapsed
+        } else {
+          0.0
+        };
+        measurements.push_back(speed);
+        if measurements.len() > 10 {
+          measurements.pop_front();
+        }
+        let avg_speed = measurements.iter().sum::<f64>() / measurements.len() as f64;
+        let eta = if avg_speed > 0.0 {
+          (total_size as f64 - downloaded as f64) / avg_speed
+        } else {
+          0.0
+        };
+    
+        let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
+        if progress > last_reported_progress {
+          println!(
+            "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
+            progress,
+            downloaded as f64 / 1_024_000.00,
+            total_size as f64 / 1_024_000.00,
+            eta
+          );
+          last_reported_progress = progress;
+        }
+      }
+      Err(e) => {
+        return Err(anyhow!(e));
+      }
     }
   }
 
@@ -119,7 +126,7 @@ pub fn download_with_retries(
         attempts += 1;
         std::thread::sleep(std::time::Duration::from_secs(5));
       }
-      Err(e) => return Err(e),
+      Err(e) => return Err(anyhow!(e)),
     }
   }
 }
