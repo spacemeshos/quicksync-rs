@@ -178,12 +178,12 @@ fn main() -> anyhow::Result<()> {
         Err(e) => {
           if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
             if io_err.raw_os_error() == Some(28) {
-              println!("Cannot unpack archive: not enough disk space");
+              eprintln!("Cannot unpack archive: not enough disk space");
               std::fs::remove_file(&unpacked_file_path)?;
               process::exit(2);
             }
           }
-          println!("Cannot unpack archive: {}", e);
+          eprintln!("Cannot unpack archive: {}", e);
           std::fs::remove_file(&unpacked_file_path)?;
           std::fs::remove_file(&archive_file_path)?;
           process::exit(3);
@@ -197,13 +197,13 @@ fn main() -> anyhow::Result<()> {
           println!("Checksum is valid");
         }
         Ok(false) => {
-          println!("MD5 checksums are not equal. Deleting archive and unpacked state.sql");
+          eprintln!("MD5 checksums are not equal. Deleting archive and unpacked state.sql");
           std::fs::remove_file(&unpacked_file_path)?;
           std::fs::remove_file(&archive_file_path)?;
           process::exit(4);
         }
         Err(e) => {
-          println!("Cannot verify checksum: {}", e);
+          eprintln!("Cannot verify checksum: {}", e);
           process::exit(5);
         }
       }
@@ -216,7 +216,7 @@ fn main() -> anyhow::Result<()> {
             println!("File backed up to: {}", backup_name);
           }
           Err(e) => {
-            println!("Cannot create a backup file: {}", e)
+            eprintln!("Cannot create a backup file: {}", e)
           }
         }
       }
