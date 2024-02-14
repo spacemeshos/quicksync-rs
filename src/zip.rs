@@ -4,13 +4,28 @@ use std::io::{Error, Read, Write};
 use std::path::Path;
 use zip::ZipArchive;
 
+fn find_file_index_in_archive(archive: &mut ZipArchive<File>, file_name: &str) -> Result<usize, Error> {
+  for i in 0..archive.len() {
+      let file = archive.by_index(i)?;
+      if file.name().ends_with(file_name) {
+          return Ok(i);
+      }
+  }
+
+  Err(Error::new(
+      std::io::ErrorKind::NotFound,
+      format!("File '{}' not found in archive", file_name),
+  ))
+}
+
+
+
 pub fn unpack(archive_path: &Path, output_path: &Path) -> Result<()> {
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 
-  let mut state_sql = zip
-    .by_name("state.sql")
-    .map_err(|e| Error::new(std::io::ErrorKind::NotFound, e.to_string()))?;
+  let file_index = find_file_index_in_archive(&mut zip, "state.sql")?;
+  let mut state_sql = zip.by_index(file_index)?;
   let outpath = Path::new(output_path);
 
   if let Some(p) = outpath.parent() {
