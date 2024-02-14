@@ -9,13 +9,18 @@ use url::Url;
 
 use crate::utils::strip_trailing_newline;
 
+fn replace_sql_zip_with_md5(url: &Url) -> Result<Url> {
+  let url_str = url.as_str();
+  if url_str.ends_with(".sql.zip") {
+      let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
+      Ok(Url::parse(&new_url_str)?)
+  } else {
+      anyhow::bail!("URL does not end with .sql.zip")
+  }
+}
+
 pub fn download_checksum(url: &Url) -> Result<String> {
-  let mut u = url.clone();
-  u.path_segments_mut()
-    .expect("Wrong URL")
-    .pop()
-    .push("state.sql.md5");
-  let md5_url = u.to_string();
+  let md5_url = replace_sql_zip_with_md5(&url)?;
 
   let client = Client::new();
   let response: Response = client.get(md5_url).send()?;
