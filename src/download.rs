@@ -64,7 +64,7 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
       Ok(bytes_read) => {
         file.write_all(&buffer[..bytes_read])?;
         downloaded += bytes_read as u64;
-    
+
         let elapsed = start.elapsed().as_secs_f64();
         let speed = if elapsed > 0.0 {
           downloaded as f64 / elapsed
@@ -81,7 +81,7 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
         } else {
           0.0
         };
-    
+
         let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
         if progress > last_reported_progress {
           println!(

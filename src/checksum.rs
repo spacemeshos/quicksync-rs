@@ -12,10 +12,10 @@ use crate::utils::strip_trailing_newline;
 fn replace_sql_zip_with_md5(url: &Url) -> Result<Url> {
   let url_str = url.as_str();
   if url_str.ends_with(".sql.zip") {
-      let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
-      Ok(Url::parse(&new_url_str)?)
+    let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
+    Ok(Url::parse(&new_url_str)?)
   } else {
-      anyhow::bail!("URL does not end with .sql.zip")
+    anyhow::bail!("URL does not end with .sql.zip")
   }
 }
 
