@@ -101,13 +101,17 @@ fn main() -> anyhow::Result<()> {
         let db_file_str = db_file_path.to_str().expect("Cannot compose path");
         println!("Checking database: {}", db_file_str);
         let db_layer = if db_file_path.exists() {
-          i64::from(get_last_layer_from_db(&db_file_path)?)
+          i64::from(get_last_layer_from_db(&db_file_path).or_else(
+            |err| {
+              eprintln!("{}", err);
+              println!("Cannot read database, trating it as empty database");
+              return Ok::<i32, anyhow::Error>(0);
+            }
+          )?)
         } else {
+          println!("Database file is not found");
           0
         };
-        if db_layer == 0 {
-          println!("Database file is not found");
-        }
         println!("Latest layer in db: {}", db_layer);
 
         let time_layer = calculate_latest_layer(genesis_time, layer_duration)?;
