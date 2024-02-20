@@ -117,7 +117,7 @@ pub fn download_with_retries(
     match download_file(url, file_path, redirect_path) {
       Ok(()) => return Ok(()),
       Err(e) if attempts < max_retries => {
-        eprintln!(
+        println!(
           "Download error: {}. Attempt {} / {}",
           e,
           attempts + 1,

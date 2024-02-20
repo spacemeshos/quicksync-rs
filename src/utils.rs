@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
 use reqwest::blocking::Client;
 use std::{env, path::PathBuf};
-use url::{ParseError, Url};
+use url::Url;
 
 pub fn strip_trailing_newline(input: &str) -> &str {
   input.trim_end()
@@ -27,13 +27,13 @@ pub fn trim_version(version: &str) -> &str {
   version.split('+').next().unwrap_or(version)
 }
 
-pub fn build_url(base: &Url, path: &str) -> Result<Url, ParseError> {
+pub fn build_url(base: &Url, path: &str) -> Url {
   let mut url = base.clone();
   url
     .path_segments_mut()
     .expect("cannot be base")
     .extend(path.split('/'));
-  Ok(url)
+  url
 }
 
 pub fn backup_file(original_path: &PathBuf) -> Result<PathBuf> {
@@ -77,7 +77,7 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
     .build()?;
 
   let path = format!("{}/state.zip", go_version);
-  let url = build_url(&download_url, &path)?;
+  let url = build_url(&download_url, &path);
 
   let response = client.head(url).send()?;
 

@@ -8,6 +8,7 @@ mod checksum;
 mod download;
 mod go_spacemesh;
 mod parsers;
+mod reader_with_progress;
 mod sql;
 mod utils;
 mod zip;
@@ -84,6 +85,26 @@ fn go_spacemesh_default_path() -> &'static str {
     "./go-spacemesh"
   }
 }
+
+fn backup_or_fail(file_path: &PathBuf) -> () {
+  if file_path.exists() {
+    println!(
+      "Backing up file: {}",
+      file_path.file_name().unwrap().to_str().unwrap()
+    );
+    match backup_file(&file_path) {
+      Ok(b) => {
+        let backup_name = b.to_str().expect("Cannot get a path of backed up file");
+        println!("File backed up to: {}", backup_name);
+      }
+      Err(e) => {
+        eprintln!("Cannot create a backup file: {}", e);
+        process::exit(6);
+      }
+    }
+  }
+}
+
 fn main() -> anyhow::Result<()> {
   let cli = Cli::parse();
 
@@ -101,13 +122,11 @@ fn main() -> anyhow::Result<()> {
         let db_file_str = db_file_path.to_str().expect("Cannot compose path");
         println!("Checking database: {}", db_file_str);
         let db_layer = if db_file_path.exists() {
-          i64::from(get_last_layer_from_db(&db_file_path).or_else(
-            |err| {
-              eprintln!("{}", err);
-              println!("Cannot read database, trating it as empty database");
-              return Ok::<i32, anyhow::Error>(0);
-            }
-          )?)
+          i64::from(get_last_layer_from_db(&db_file_path).or_else(|err| {
+            eprintln!("{}", err);
+            println!("Cannot read database, trating it as empty database");
+            return Ok::<i32, anyhow::Error>(0);
+          })?)
         } else {
           println!("Database file is not found");
           0
@@ -143,6 +162,7 @@ fn main() -> anyhow::Result<()> {
       let archive_file_path = dir_path.join("state.zip");
       let unpacked_file_path = dir_path.join("state_downloaded.sql");
       let final_file_path = dir_path.join("state.sql");
+      let wal_file_path = dir_path.join("state.sql-wal");
 
       // Download archive if needed
       if !archive_file_path.exists() {
@@ -155,7 +175,7 @@ fn main() -> anyhow::Result<()> {
             .to_str()
             .expect("Cannot resolve path to go-spacemesh");
           let path = format!("{}/state.zip", &get_version(go_path_str)?);
-          let url = build_url(&download_url, &path)?;
+          let url = build_url(&download_url, &path);
           url.to_string()
         };
 
@@ -214,18 +234,9 @@ fn main() -> anyhow::Result<()> {
         }
       }
 
-      if final_file_path.exists() {
-        println!("Backing up current state.sql file");
-        match backup_file(&final_file_path) {
-          Ok(b) => {
-            let backup_name = b.to_str().expect("Cannot get a path of backed up file");
-            println!("File backed up to: {}", backup_name);
-          }
-          Err(e) => {
-            eprintln!("Cannot create a backup file: {}", e)
-          }
-        }
-      }
+      backup_or_fail(&final_file_path);
+      backup_or_fail(&wal_file_path);
+
       std::fs::rename(&unpacked_file_path, &final_file_path)
         .expect("Cannot rename downloaded file into state.sql");
 

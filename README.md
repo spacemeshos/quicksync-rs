@@ -17,3 +17,4 @@ cargo run -- help
 - `3` - cannot unpack archive: any other reason
 - `4` - invalid checksum
 - `5` - cannot verify checksum for some reason
+- `6` - cannot create a backup file
