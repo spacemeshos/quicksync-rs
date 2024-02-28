@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
-use reqwest::blocking::Client;
+use reqwest::{blocking::Client, redirect};
 use std::{env, path::PathBuf};
 use url::Url;
 
@@ -73,6 +73,7 @@ fn extract_number_from_url(url: &Url) -> Result<u64> {
 
 pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Result<u64> {
   let client = Client::builder()
+    .redirect(redirect::Policy::none())
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
 
@@ -81,8 +82,9 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
 
   let response = client.head(url).send()?;
 
-  let final_url = response.url();
-  let num = extract_number_from_url(final_url)?;
+  let location = response.headers().get("location").unwrap().to_str()?;
+  let final_url = Url::parse(location)?;
+  let num = extract_number_from_url(&final_url)?;
 
   Ok(num)
 }
