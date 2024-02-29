@@ -161,7 +161,7 @@ fn main() -> anyhow::Result<()> {
       let temp_file_path = dir_path.join("state.download");
       let redirect_file_path = dir_path.join("state.url");
       let archive_zip_file_path = dir_path.join("state.zip");
-      let archive_zstd_file_path = dir_path.join("state.zstd");
+      let archive_zstd_file_path = dir_path.join("state.zst");
       let unpacked_file_path = dir_path.join("state_downloaded.sql");
       let final_file_path = dir_path.join("state.sql");
       let wal_file_path = dir_path.join("state.sql-wal");
@@ -177,7 +177,7 @@ fn main() -> anyhow::Result<()> {
           let go_path_str = go_path
             .to_str()
             .expect("Cannot resolve path to go-spacemesh");
-          let path = format!("{}/state.zstd", &get_version(go_path_str)?);
+          let path = format!("{}/state.zst", &get_version(go_path_str)?);
           let url = build_url(&download_url, &path);
           url.to_string()
         };
@@ -198,7 +198,7 @@ fn main() -> anyhow::Result<()> {
           archive_zstd_file_path
         };
 
-        // Rename `state.download` -> `state.zstd`
+        // Rename `state.download` -> `state.zst`
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
         archive_file_path

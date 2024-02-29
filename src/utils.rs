@@ -56,7 +56,7 @@ pub fn backup_file(original_path: &PathBuf) -> Result<PathBuf> {
 }
 
 fn extract_number_from_url(url: &Url) -> Result<u64> {
-  let re = Regex::new(r"/(\d+)\.sql\.(zip|zstd)$")?;
+  let re = Regex::new(r"/(\d+)\.sql\.(zip|zst)$")?;
   let path = url.path();
   let caps = re
     .captures(path)
@@ -103,7 +103,7 @@ mod tests {
   #[test]
   fn test_extract_number_zstd_valid() {
     let url =
-      Url::parse("https://quicksync-downloads.spacemesh.network/10/61579.sql.zstd").unwrap();
+      Url::parse("https://quicksync-downloads.spacemesh.network/10/61579.sql.zst").unwrap();
     assert_eq!(extract_number_from_url(&url).unwrap(), 61579);
   }
 
