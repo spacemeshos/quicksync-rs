@@ -1,10 +1,12 @@
 use anyhow::Result;
 use std::fs::File;
-use std::io::{BufReader, Error};
+use std::io::{BufReader, BufWriter, Error};
 use std::path::Path;
 use zip::read::ZipFile;
 use zip::ZipArchive;
+use zstd::stream::read::Decoder;
 
+use crate::reader_with_bytes::ReaderWithBytes;
 use crate::reader_with_progress::ReaderWithProgress;
 
 fn find_file_in_archive<'a>(
@@ -29,7 +31,28 @@ fn find_file_in_archive<'a>(
   ))
 }
 
-pub fn unpack(archive_path: &Path, output_path: &Path) -> Result<()> {
+pub fn unpack_zstd(archive_path: &Path, output_path: &Path) -> Result<()> {
+  let file = File::open(archive_path)?;
+  let reader = BufReader::new(file);
+  let mut decoder = Decoder::new(reader)?;
+
+  decoder.window_log_max(31)?;
+  let outpath = Path::new(output_path);
+  if let Some(p) = outpath.parent() {
+    std::fs::create_dir_all(p)?;
+  }
+  let outfile = File::create(outpath)?;
+  let mut writer = BufWriter::new(outfile);
+
+  let mut reader = ReaderWithBytes::new(decoder);
+
+  std::io::copy(&mut reader, &mut writer)?;
+  println!("Unpacking complete!");
+
+  Ok(())
+}
+
+pub fn unpack_zip(archive_path: &Path, output_path: &Path) -> Result<()> {
   let file = File::open(archive_path)?;
   let mut zip = ZipArchive::new(file)?;
 

@@ -14,6 +14,9 @@ fn replace_sql_zip_with_md5(url: &Url) -> Result<Url> {
   if url_str.ends_with(".sql.zip") {
     let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
     Ok(Url::parse(&new_url_str)?)
+  } else if url_str.ends_with(".sql.zstd") {
+    let new_url_str = url_str.replace(".sql.zstd", ".sql.md5");
+    Ok(Url::parse(&new_url_str)?)
   } else {
     anyhow::bail!("URL does not end with .sql.zip")
   }
