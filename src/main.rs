@@ -215,6 +215,22 @@ fn main() -> anyhow::Result<()> {
         unpack_zstd
       };
 
+      // Verify downloaded archive
+      match verify_archive(&redirect_file_path, &archive_file_path) {
+        Ok(true) => {
+          println!("Archive checksm validated");
+        }
+        Ok(false) => {
+          eprintln!("Archive checksum is invalid. Deleting archive");
+          std::fs::remove_file(&archive_file_path)?;
+          process::exit(7);
+        }
+        Err(e) => {
+          eprintln!("Cannot validate archive checksum: {}", e);
+          process::exit(8);
+        }
+      }
+
       // Unzip
       match unpack(&archive_file_path, &unpacked_file_path) {
         Ok(_) => {
@@ -230,15 +246,13 @@ fn main() -> anyhow::Result<()> {
           }
           eprintln!("Cannot unpack archive: {}", e);
           std::fs::remove_file(&unpacked_file_path)?;
-          std::fs::remove_file(&archive_file_path)?;
-          std::fs::remove_file(&redirect_file_path)?;
           process::exit(3);
         }
       }
 
       // Verify checksum
       println!("Verifying MD5 checksum...");
-      match verify(&redirect_file_path, &unpacked_file_path) {
+      match verify_db(&redirect_file_path, &unpacked_file_path) {
         Ok(true) => {
           println!("Checksum is valid");
         }

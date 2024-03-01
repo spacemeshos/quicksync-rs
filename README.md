@@ -15,6 +15,8 @@ cargo run -- help
 - `1` - failed to download archive within max retries (any reason)
 - `2` - cannot unpack archive: not enough disk space
 - `3` - cannot unpack archive: any other reason
-- `4` - invalid checksum
+- `4` - invalid checksum of db
 - `5` - cannot verify checksum for some reason
 - `6` - cannot create a backup file
+- `7` - invalid checksum of archive
+- `8` - cannot validate archive checksum

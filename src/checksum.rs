@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::utils::strip_trailing_newline;
 
-fn replace_sql_zip_with_md5(url: &Url) -> Result<Url> {
+fn get_link_to_db_md5(url: &Url) -> Result<Url> {
   let url_str = url.as_str();
   if url_str.ends_with(".sql.zip") {
     let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
@@ -22,11 +22,17 @@ fn replace_sql_zip_with_md5(url: &Url) -> Result<Url> {
   }
 }
 
-pub fn download_checksum(url: &Url) -> Result<String> {
-  let md5_url = replace_sql_zip_with_md5(&url)?;
+fn get_link_to_archive_md5(url: &Url) -> Result<Url> {
+  let url_str = url.as_str();
+  let mut md5_url = url_str.to_owned();
+  let md5_ext = ".md5";
+  md5_url.push_str(md5_ext);
+  Ok(Url::parse(&md5_url)?)
+}
 
+pub fn download_checksum(url: Url) -> Result<String> {
   let client = Client::new();
-  let response: Response = client.get(md5_url).send()?;
+  let response: Response = client.get(url).send()?;
 
   if response.status().is_success() {
     let md5 = response.text()?;
@@ -59,12 +65,23 @@ pub fn calculate_checksum(file_path: &Path) -> Result<String> {
   Ok(format!("{:x}", hash))
 }
 
-pub fn verify(redirect_file_path: &Path, unpacked_file_path: &Path) -> Result<bool> {
+pub fn verify_archive(redirect_file_path: &Path, archive_path: &Path) -> Result<bool> {
   let archive_url_str = String::from_utf8(std::fs::read(redirect_file_path)?)?;
-
   let archive_url = Url::parse(&archive_url_str)?;
+  let md5_url = get_link_to_archive_md5(&archive_url)?;
 
-  let md5_expected = download_checksum(&archive_url)?;
+  let md5_expected = download_checksum(md5_url)?;
+  let md5_actual = calculate_checksum(archive_path)?;
+
+  Ok(md5_actual == md5_expected)
+}
+
+pub fn verify_db(redirect_file_path: &Path, unpacked_file_path: &Path) -> Result<bool> {
+  let archive_url_str = String::from_utf8(std::fs::read(redirect_file_path)?)?;
+  let archive_url = Url::parse(&archive_url_str)?;
+  let md5_url = get_link_to_db_md5(&archive_url)?;
+
+  let md5_expected = download_checksum(md5_url)?;
   let md5_actual = calculate_checksum(unpacked_file_path)?;
 
   Ok(md5_actual == md5_expected)

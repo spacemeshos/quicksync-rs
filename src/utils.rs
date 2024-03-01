@@ -102,8 +102,7 @@ mod tests {
 
   #[test]
   fn test_extract_number_zstd_valid() {
-    let url =
-      Url::parse("https://quicksync-downloads.spacemesh.network/10/61579.sql.zst").unwrap();
+    let url = Url::parse("https://quicksync-downloads.spacemesh.network/10/61579.sql.zst").unwrap();
     assert_eq!(extract_number_from_url(&url).unwrap(), 61579);
   }
 
