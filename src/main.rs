@@ -8,18 +8,19 @@ mod checksum;
 mod download;
 mod go_spacemesh;
 mod parsers;
+mod reader_with_bytes;
 mod reader_with_progress;
 mod sql;
+mod unpack;
 mod utils;
-mod zip;
 
 use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
 use parsers::*;
 use sql::get_last_layer_from_db;
+use unpack::{unpack_zip, unpack_zstd};
 use utils::*;
-use zip::unpack;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -159,13 +160,15 @@ fn main() -> anyhow::Result<()> {
       let dir_path = node_data;
       let temp_file_path = dir_path.join("state.download");
       let redirect_file_path = dir_path.join("state.url");
-      let archive_file_path = dir_path.join("state.zip");
+      let archive_zip_file_path = dir_path.join("state.zip");
+      let archive_zstd_file_path = dir_path.join("state.zst");
       let unpacked_file_path = dir_path.join("state_downloaded.sql");
       let final_file_path = dir_path.join("state.sql");
       let wal_file_path = dir_path.join("state.sql-wal");
 
       // Download archive if needed
-      if !archive_file_path.exists() {
+      let archive_file_path = if !archive_zip_file_path.exists() && !archive_zstd_file_path.exists()
+      {
         println!("Downloading the latest database...");
         let url = if redirect_file_path.exists() {
           std::fs::read_to_string(&redirect_file_path)?
@@ -174,7 +177,7 @@ fn main() -> anyhow::Result<()> {
           let go_path_str = go_path
             .to_str()
             .expect("Cannot resolve path to go-spacemesh");
-          let path = format!("{}/state.zip", &get_version(go_path_str)?);
+          let path = format!("{}/state.zst", &get_version(go_path_str)?);
           let url = build_url(&download_url, &path);
           url.to_string()
         };
@@ -189,9 +192,43 @@ fn main() -> anyhow::Result<()> {
           process::exit(1);
         }
 
-        // Rename `state.download` -> `state.zip`
+        let archive_file_path = if url.ends_with(".zip") {
+          archive_zip_file_path
+        } else {
+          archive_zstd_file_path
+        };
+
+        // Rename `state.download` -> `state.zst`
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
+        archive_file_path
+      } else if archive_zip_file_path.exists() {
+        archive_zip_file_path
+      } else {
+        archive_zstd_file_path
+      };
+
+      let archive_url = std::fs::read_to_string(&redirect_file_path)?;
+      let unpack = if archive_url.ends_with(".zip") {
+        unpack_zip
+      } else {
+        unpack_zstd
+      };
+
+      // Verify downloaded archive
+      match verify_archive(&redirect_file_path, &archive_file_path) {
+        Ok(true) => {
+          println!("Archive checksm validated");
+        }
+        Ok(false) => {
+          eprintln!("Archive checksum is invalid. Deleting archive");
+          std::fs::remove_file(&archive_file_path)?;
+          process::exit(7);
+        }
+        Err(e) => {
+          eprintln!("Cannot validate archive checksum: {}", e);
+          process::exit(8);
+        }
       }
 
       // Unzip
@@ -209,15 +246,13 @@ fn main() -> anyhow::Result<()> {
           }
           eprintln!("Cannot unpack archive: {}", e);
           std::fs::remove_file(&unpacked_file_path)?;
-          std::fs::remove_file(&archive_file_path)?;
-          std::fs::remove_file(&redirect_file_path)?;
           process::exit(3);
         }
       }
 
       // Verify checksum
       println!("Verifying MD5 checksum...");
-      match verify(&redirect_file_path, &unpacked_file_path) {
+      match verify_db(&redirect_file_path, &unpacked_file_path) {
         Ok(true) => {
           println!("Checksum is valid");
         }
