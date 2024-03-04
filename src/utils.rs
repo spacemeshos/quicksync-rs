@@ -77,7 +77,7 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
 
-  let path = format!("{}/state.zip", go_version);
+  let path = format!("{}/state.zst", go_version);
   let url = build_url(&download_url, &path);
 
   let response = client.head(url).send()?;
