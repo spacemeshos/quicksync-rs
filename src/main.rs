@@ -12,6 +12,7 @@ mod reader_with_bytes;
 mod reader_with_progress;
 mod sql;
 mod unpack;
+mod user_agent;
 mod utils;
 
 use checksum::*;
