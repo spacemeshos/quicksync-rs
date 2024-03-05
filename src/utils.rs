@@ -5,6 +5,8 @@ use reqwest::{blocking::Client, redirect};
 use std::{env, path::PathBuf};
 use url::Url;
 
+use crate::user_agent::APP_USER_AGENT;
+
 pub fn strip_trailing_newline(input: &str) -> &str {
   input.trim_end()
 }
@@ -73,11 +75,12 @@ fn extract_number_from_url(url: &Url) -> Result<u64> {
 
 pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Result<u64> {
   let client = Client::builder()
+    .user_agent(APP_USER_AGENT)
     .redirect(redirect::Policy::none())
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
 
-  let path = format!("{}/state.zip", go_version);
+  let path = format!("{}/state.zst", go_version);
   let url = build_url(&download_url, &path);
 
   let response = client.head(url).send()?;

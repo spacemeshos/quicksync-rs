@@ -6,6 +6,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Instant;
 
+use crate::user_agent::APP_USER_AGENT;
+
 pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
   if let Some(dir) = file_path.parent() {
     fs::create_dir_all(dir)?;
@@ -20,6 +22,7 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
   let file_size = file.metadata()?.len();
 
   let client = Client::builder()
+    .user_agent(APP_USER_AGENT)
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
   let mut response = client
