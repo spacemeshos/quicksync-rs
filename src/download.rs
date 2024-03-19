@@ -6,6 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Instant;
 
+use crate::read_error_response::read_error_response;
 use crate::user_agent::APP_USER_AGENT;
 
 pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
@@ -34,14 +35,15 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
 
   fs::write(redirect_path, final_url.as_str())?;
 
-  if !response.status().is_success() {
+  let status = response.status();
+  if !status.is_success() {
     fs::remove_file(redirect_path)?;
     fs::remove_file(file_path)?;
-
-    anyhow::bail!(
-      "Failed to download: Response status code is {:?}",
-      response.status()
-    );
+    let err = read_error_response(response.text()?);
+    anyhow::bail!(format!(
+      "Failed to download from {}: {} {}",
+      final_url, status, err
+    ));
   }
 
   let total_size = response

@@ -7,7 +7,10 @@ use std::{
 };
 use url::Url;
 
-use crate::utils::strip_trailing_newline;
+use crate::{
+  read_error_response::read_error_response, user_agent::APP_USER_AGENT,
+  utils::strip_trailing_newline,
+};
 
 fn get_link_to_db_md5(url: &Url) -> Result<Url> {
   let url_str = url.as_str();
@@ -31,18 +34,23 @@ fn get_link_to_archive_md5(url: &Url) -> Result<Url> {
 }
 
 pub fn download_checksum(url: Url) -> Result<String> {
-  let client = Client::new();
-  let response: Response = client.get(url).send()?;
+  let client = Client::builder()
+    .user_agent(APP_USER_AGENT)
+    .timeout(std::time::Duration::from_secs(30))
+    .build()?;
+  let response: Response = client.get(url.clone()).send()?;
 
-  if response.status().is_success() {
+  let status = response.status();
+  if status.is_success() {
     let md5 = response.text()?;
     let stripped = strip_trailing_newline(&md5);
     Ok(stripped.to_string())
   } else {
-    anyhow::bail!(
-      "Cannot download MD5 checksum: status code is {:?}",
-      response.status()
-    );
+    let err = read_error_response(response.text()?);
+    anyhow::bail!(format!(
+      "Cannot download MD5 checksum from {}: {} {}",
+      url, status, err
+    ));
   }
 }
 
