@@ -8,6 +8,7 @@ mod checksum;
 mod download;
 mod go_spacemesh;
 mod parsers;
+mod read_error_response;
 mod reader_with_bytes;
 mod reader_with_progress;
 mod sql;
