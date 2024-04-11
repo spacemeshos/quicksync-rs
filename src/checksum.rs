@@ -55,7 +55,19 @@ pub fn download_checksum(url: Url) -> Result<String> {
 }
 
 pub fn calculate_checksum(file_path: &Path) -> Result<String> {
-  let file = File::open(file_path)?;
+  let file = match File::open(file_path) {
+    Ok(file) => file,
+    Err(error) => match error.kind() {
+      std::io::ErrorKind::NotFound => {
+        anyhow::bail!(
+          "Cannot calculate checksum: File not found at {}",
+          file_path.display()
+        )
+      }
+      _ => anyhow::bail!("Cannot calculate checksum: Error opening file: {}", error),
+    },
+  };
+
   let mut reader = BufReader::with_capacity(16 * 1024 * 1024, file);
   let mut hasher = md5::Context::new();
 
