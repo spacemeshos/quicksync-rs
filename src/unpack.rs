@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Error};
 use std::path::Path;
@@ -32,16 +32,22 @@ fn find_file_in_archive<'a>(
 }
 
 pub fn unpack_zstd(archive_path: &Path, output_path: &Path) -> Result<()> {
-  let file = File::open(archive_path)?;
+  let file = File::open(archive_path).context(format!(
+    "Failed to open archive at path: {:?}",
+    archive_path
+  ))?;
   let reader = BufReader::new(file);
   let mut decoder = Decoder::new(reader)?;
 
   decoder.window_log_max(31)?;
   let outpath = Path::new(output_path);
   if let Some(p) = outpath.parent() {
-    std::fs::create_dir_all(p)?;
+    std::fs::create_dir_all(p).context(format!("Failed to create directory at path: {:?}", p))?;
   }
-  let outfile = File::create(outpath)?;
+  let outfile = File::create(outpath).context(format!(
+    "Failed to create output file at path: {:?}",
+    outpath
+  ))?;
   let mut writer = BufWriter::new(outfile);
 
   let mut reader = ReaderWithBytes::new(decoder);
