@@ -92,6 +92,16 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
   Ok(num)
 }
 
+pub fn to_precision(number: f64, precision: u8) -> f64 {
+  let pow = u32::pow(10, precision as u32);
+  let mult: f64 = f64::from(pow);
+  if mult > 1.0 {
+    return (number * mult).round() / mult;
+  } else {
+    return number;
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -113,5 +123,14 @@ mod tests {
   fn test_extract_number_invalid() {
     let url = Url::parse("https://quicksync.spacemesh.network/state.zip").unwrap();
     assert!(extract_number_from_url(&url).is_err());
+  }
+
+  #[test]
+  fn test_to_precision() {
+    assert_eq!(to_precision(23.57742, 3), 23.577);
+    assert_eq!(to_precision(23.57742, 2), 23.58);
+    assert_eq!(to_precision(55555.0, 3), 55555.0);
+    assert_eq!(to_precision(55555.0, 0), 55555.0);
+    assert_eq!(to_precision(123.456789, 5), 123.45679);
   }
 }

@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use crate::read_error_response::read_error_response;
 use crate::user_agent::APP_USER_AGENT;
+use crate::utils;
 
 pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
   if let Some(dir) = file_path.parent() {
@@ -44,19 +45,23 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
     ));
   }
 
-  let total_size = response
+  let content_len = response
     .headers()
     .get(reqwest::header::CONTENT_LENGTH)
     .and_then(|ct_len| ct_len.to_str().ok())
     .and_then(|ct_len| ct_len.parse::<u64>().ok())
-    .unwrap_or(0)
-    + file_size;
+    .unwrap_or(0);
+
+  let total_size = content_len + file_size;
 
   file.seek(SeekFrom::End(0))?;
-  let mut downloaded: u64 = file_size;
-  let mut last_reported_progress: i64 = -1;
+
+  const MEASUREMENT_SIZE: usize = 500;
+
+  let mut last_reported_progress: f64 = -1.0;
   let start = Instant::now();
-  let mut measurements = VecDeque::with_capacity(10);
+  let mut measurements = VecDeque::with_capacity(MEASUREMENT_SIZE);
+  let mut just_downloaded: u64 = 0;
 
   let mut buffer = [0; 16 * 1024];
   loop {
@@ -66,11 +71,12 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
       }
       Ok(bytes_read) => {
         file.write_all(&buffer[..bytes_read])?;
-        downloaded += bytes_read as u64;
+        just_downloaded += bytes_read as u64;
+        let downloaded = file_size + just_downloaded;
 
         let elapsed = start.elapsed().as_secs_f64();
         let speed = if elapsed > 0.0 {
-          downloaded as f64 / elapsed
+          just_downloaded as f64 / elapsed
         } else {
           0.0
         };
@@ -79,13 +85,13 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
           measurements.pop_front();
         }
         let avg_speed = measurements.iter().sum::<f64>() / measurements.len() as f64;
-        let eta = if avg_speed > 0.0 {
+        let eta = if avg_speed > 1.0 {
           (total_size as f64 - downloaded as f64) / avg_speed
         } else {
           0.0
         };
 
-        let progress = (downloaded as f64 / total_size as f64 * 100.0).round() as i64;
+        let progress = utils::to_precision(downloaded as f64 / total_size as f64 * 100.0, 2);
         if progress > last_reported_progress {
           println!(
             "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
