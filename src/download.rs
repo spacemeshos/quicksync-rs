@@ -37,8 +37,6 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
 
   let status = response.status();
   if !status.is_success() {
-    fs::remove_file(redirect_path)?;
-    fs::remove_file(file_path)?;
     let err = read_error_response(response.text()?);
     anyhow::bail!(format!(
       "Failed to download from {}: {} {}",
