@@ -6,9 +6,9 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Instant;
 
+use crate::eta::Eta;
 use crate::read_error_response::read_error_response;
 use crate::user_agent::APP_USER_AGENT;
-use crate::utils;
 
 pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
   if let Some(dir) = file_path.parent() {
@@ -58,7 +58,7 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
 
   const MEASUREMENT_SIZE: usize = 500;
 
-  let mut last_reported_progress: f64 = -1.0;
+  let mut last_reported_progress: Option<f64> = None;
   let start = Instant::now();
   let mut measurements = VecDeque::with_capacity(MEASUREMENT_SIZE);
   let mut just_downloaded: u64 = 0;
@@ -81,26 +81,28 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
           0.0
         };
         measurements.push_back(speed);
-        if measurements.len() > 10 {
+        if measurements.len() > MEASUREMENT_SIZE {
           measurements.pop_front();
         }
         let avg_speed = measurements.iter().sum::<f64>() / measurements.len() as f64;
-        let eta = if avg_speed > 1.0 {
-          (total_size as f64 - downloaded as f64) / avg_speed
+        let eta = if avg_speed > 1.0 && measurements.len() > (MEASUREMENT_SIZE / 2) {
+          Eta::Seconds((total_size as f64 - downloaded as f64) / avg_speed)
         } else {
-          0.0
+          Eta::Unknown
         };
 
-        let progress = utils::to_precision(downloaded as f64 / total_size as f64 * 100.0, 2);
-        if progress > last_reported_progress {
+        let progress = downloaded as f64 / total_size as f64;
+        if last_reported_progress.is_none()
+          || last_reported_progress.is_some_and(|x| progress > x + 0.001)
+        {
           println!(
-            "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {:.0} sec",
-            progress,
+            "Downloading... {:.2}% ({:.2} MB/{:.2} MB) ETA: {}",
+            progress * 100.0,
             downloaded as f64 / 1_024_000.00,
             total_size as f64 / 1_024_000.00,
             eta
           );
-          last_reported_progress = progress;
+          last_reported_progress = Some(progress);
         }
       }
       Err(e) => {
