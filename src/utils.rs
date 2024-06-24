@@ -92,16 +92,6 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
   Ok(num)
 }
 
-pub fn to_precision(number: f64, precision: u8) -> f64 {
-  let pow = u32::pow(10, precision as u32);
-  let mult: f64 = f64::from(pow);
-  if mult > 1.0 {
-    return (number * mult).round() / mult;
-  } else {
-    return number;
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

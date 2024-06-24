@@ -6,6 +6,7 @@ use url::Url;
 
 mod checksum;
 mod download;
+mod eta;
 mod go_spacemesh;
 mod parsers;
 mod read_error_response;
