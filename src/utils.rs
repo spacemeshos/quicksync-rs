@@ -114,4 +114,13 @@ mod tests {
     let url = Url::parse("https://quicksync.spacemesh.network/state.zip").unwrap();
     assert!(extract_number_from_url(&url).is_err());
   }
+
+  #[test]
+  fn test_to_precision() {
+    assert_eq!(to_precision(23.57742, 3), 23.577);
+    assert_eq!(to_precision(23.57742, 2), 23.58);
+    assert_eq!(to_precision(55555.0, 3), 55555.0);
+    assert_eq!(to_precision(55555.0, 0), 55555.0);
+    assert_eq!(to_precision(123.456789, 5), 123.45679);
+  }
 }
