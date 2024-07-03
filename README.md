@@ -50,7 +50,7 @@ Listed below are the exit codes and what they mean:
 The list of available commands for the `quicksync` utility is presented below. Note that these commands are for Linux. Simply, Change `./quicksync` to `.\quicksync.exe` For the Windows commands.
 
 - `./quicksync download`: Downloads the latest `state.sql` file.
-- `./quicksync check`: Checks if the current `state.sql` is up to date or not.
+- `./quicksync check`: Checks if the current `state.sql` is up to date.
 - `./quicksync help`: Displays all operations that `quicksync` can perform.
 - `./quicksync --version`: Displays the quicksync version.
 - `cargo run -- help`: Displays helpful commands for running the package. Relevant for developers.
