@@ -16,7 +16,7 @@ Instructions for using `quicksync-rs` to download the state are given below.
 4. If you see a `state.sql` file in this folder, delete it. Otherwise, continue to step 5.
 5. Open the Windows Powershell in this folder. You can do this by holding the "shift" key, right-clicking, and selecting the "Open PowerShell here" option.
 6. Inside the powershell, type `.\quicksync.exe --help` and press enter. This will show you the available options.
-7. We want to download the state database. Type `.\quicksync.exe download --node-data <path-to-your-node-data-folder>`. Note that the node data folder can be identified by the other folders and files it contains such as `bootstrap/`, `p2p/`, `genesis.json`, etc. A lot of smeshers label the node data folder as `sm_data` or just `data`. In the official Spacemesh docs and guides, this folder has been labelled as `node_data`.
+7. We want to download the state database. Type `.\quicksync.exe download --node-data <path-to-your-node-data-folder>`. By default, the node data folder is located in the `C:\Users\{USERNAME}\AppData\Roaming\Spacemesh` directory and can be identified by the other folders and files it contains such as `bootstrap/`, `p2p/`, `genesis.json`, etc. A lot of smeshers label the node data folder as `sm_data` or just `data`. In the official Spacemesh docs and guides, this folder has been labelled as `node_data`.
 8. Wait for the process to complete. The `quicksync-rs` utility will download, unzip, and verify the downloaded state.
 9. Your node data folder should now have the latest `state.sql` file.
 
@@ -27,7 +27,7 @@ Instructions for using `quicksync-rs` to download the state are given below.
 3. Make the `quicksync` file executable by using this CLI command: `chmod +x quicksync`. Now you have the `quicksync` executable.
 4. Move the `quicksync` executable  to your `go-spacemesh` folder.
 5. Delete the existing `state.sql` file from the node data directory.
-6. Open a terminal in the `go-spacemesh` directory where the `quicksync` executable is, and run this command: `./quicksync download --node-data <path-to-your-node-data-folder>`.
+6. Open a terminal in the `go-spacemesh` directory where the `quicksync` executable is, and run this command: `./quicksync download --node-data <path-to-your-node-data-folder>`. By default, the node data folder is located in `~/.config/Spacemesh`.
 7. Wait for the process to complete. The `quicksync-rs` utility will download, unzip, and verify the downloaded state.
 8. Your node data folder should now have the latest `state.sql` file.
 
