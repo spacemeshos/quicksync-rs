@@ -77,7 +77,7 @@ jobs:
 
       - name: Version suffix (for release only)
         id: version
-        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}" >> $GITHUB_OUTPUT
+        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref_name || ''}}" >> $GITHUB_OUTPUT
 
       - name: Install SQLite3 (Linux Arm64)
         if: matrix.artifact-name == 'linux-arm64'
