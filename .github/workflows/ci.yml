@@ -99,7 +99,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: quicksync-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          name: quicksync-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
           path: |
             target/release/quicksync${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
