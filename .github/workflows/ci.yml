@@ -63,7 +63,7 @@ jobs:
           - os: [self-hosted, macos, arm64]
             artifact-name: macos-arm64
 
-          - os: macos-latest
+          - os: macos-13
             artifact-name: macos
 
           - os: windows-2019
@@ -74,10 +74,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ join( matrix.os, '-' ) }}
-
-      - name: Version suffix (for release only)
-        id: version
-        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}" >> $GITHUB_OUTPUT
 
       - name: Install SQLite3 (Linux Arm64)
         if: matrix.artifact-name == 'linux-arm64'
@@ -99,7 +95,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: quicksync-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
+          name: quicksync-${{ matrix.artifact-name }}
           path: |
             target/release/quicksync${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
