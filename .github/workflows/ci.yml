@@ -63,7 +63,7 @@ jobs:
           - os: [self-hosted, macos, arm64]
             artifact-name: macos-arm64
 
-          - os: macos-latest
+          - os: macos-13
             artifact-name: macos
 
           - os: windows-2019
