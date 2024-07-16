@@ -91,20 +91,32 @@ fn go_spacemesh_default_path() -> &'static str {
 }
 
 fn backup_or_fail(file_path: &PathBuf) -> () {
-  if file_path.try_exists().unwrap_or(false) {
-    println!(
-      "Backing up file: {}",
-      file_path.file_name().unwrap().to_str().unwrap()
-    );
-    match backup_file(&file_path) {
-      Ok(b) => {
-        let backup_name = b.to_str().expect("Cannot get a path of backed up file");
-        println!("File backed up to: {}", backup_name);
+  match file_path.try_exists() {
+    Ok(true) => {
+      println!(
+        "Backing up file: {}",
+        file_path.file_name().unwrap().to_str().unwrap()
+      );
+      match backup_file(&file_path) {
+        Ok(b) => {
+          let backup_name = b.to_str().expect("Cannot get a path of backed up file");
+          println!("File backed up to: {}", backup_name);
+        }
+        Err(e) => {
+          eprintln!("Cannot create a backup file: {}", e);
+          process::exit(6);
+        }
       }
-      Err(e) => {
-        eprintln!("Cannot create a backup file: {}", e);
-        process::exit(6);
-      }
+    }
+    Ok(false) => {
+      println!(
+        "Skip backup: file {} not found",
+        file_path.to_str().unwrap()
+      );
+    }
+    Err(e) => {
+      eprintln!("Cannot create a backup file: {}", e);
+      process::exit(6);
     }
   }
 }
