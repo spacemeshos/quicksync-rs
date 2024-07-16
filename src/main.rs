@@ -90,7 +90,7 @@ fn go_spacemesh_default_path() -> &'static str {
   }
 }
 
-fn backup_or_fail(file_path: &PathBuf) -> () {
+fn backup_or_fail(file_path: PathBuf) {
   match file_path.try_exists() {
     Ok(true) => {
       println!(
@@ -99,7 +99,7 @@ fn backup_or_fail(file_path: &PathBuf) -> () {
       );
       match backup_file(&file_path) {
         Ok(b) => {
-          let backup_name = b.to_str().expect("Cannot get a path of backed up file");
+          let backup_name = b.to_string_lossy();
           println!("File backed up to: {}", backup_name);
         }
         Err(e) => {
@@ -111,7 +111,7 @@ fn backup_or_fail(file_path: &PathBuf) -> () {
     Ok(false) => {
       println!(
         "Skip backup: file {} not found",
-        file_path.to_str().unwrap()
+        file_path.to_string_lossy()
       );
     }
     Err(e) => {
@@ -293,8 +293,8 @@ fn main() -> anyhow::Result<()> {
         println!("Download URL is not found: skip DB checksum verification");
       }
 
-      backup_or_fail(&final_file_path);
-      backup_or_fail(&wal_file_path);
+      backup_or_fail(final_file_path.clone());
+      backup_or_fail(wal_file_path);
 
       std::fs::rename(&unpacked_file_path, &final_file_path)
         .expect("Cannot rename downloaded file into state.sql");
