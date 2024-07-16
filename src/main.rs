@@ -91,7 +91,7 @@ fn go_spacemesh_default_path() -> &'static str {
 }
 
 fn backup_or_fail(file_path: &PathBuf) -> () {
-  if file_path.exists() {
+  if file_path.try_exists().unwrap_or(false) {
     println!(
       "Backing up file: {}",
       file_path.file_name().unwrap().to_str().unwrap()
@@ -125,7 +125,7 @@ fn main() -> anyhow::Result<()> {
         let db_file_path = dir_path.join("state.sql");
         let db_file_str = db_file_path.to_str().expect("Cannot compose path");
         println!("Checking database: {}", db_file_str);
-        let db_layer = if db_file_path.exists() {
+        let db_layer = if db_file_path.try_exists().unwrap_or(false) {
           i64::from(get_last_layer_from_db(&db_file_path).or_else(|err| {
             eprintln!("{}", err);
             println!("Cannot read database, trating it as empty database");
@@ -170,10 +170,11 @@ fn main() -> anyhow::Result<()> {
       let wal_file_path = dir_path.join("state.sql-wal");
 
       // Download archive if needed
-      let archive_file_path = if !archive_zip_file_path.exists() && !archive_zstd_file_path.exists()
+      let archive_file_path = if !archive_zip_file_path.try_exists().unwrap_or(false)
+        && !archive_zstd_file_path.try_exists().unwrap_or(false)
       {
         println!("Downloading the latest database...");
-        let url = if redirect_file_path.exists() {
+        let url = if redirect_file_path.try_exists().unwrap_or(false) {
           std::fs::read_to_string(&redirect_file_path)?
         } else {
           let go_path = resolve_path(&go_spacemesh_path).unwrap();
@@ -205,34 +206,38 @@ fn main() -> anyhow::Result<()> {
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
         archive_file_path
-      } else if archive_zip_file_path.exists() {
+      } else if archive_zip_file_path.try_exists().unwrap_or(false) {
         archive_zip_file_path
       } else {
         archive_zstd_file_path
       };
 
-      let archive_url = std::fs::read_to_string(&redirect_file_path)?;
-      let unpack = if archive_url.ends_with(".zip") {
+      if redirect_file_path.try_exists().unwrap_or(false) {
+        println!("Verifying the checksum, it may take some time...");
+        // Verify downloaded archive
+        match verify_archive(&redirect_file_path, &archive_file_path) {
+          Ok(true) => {
+            println!("Archive checksm validated");
+          }
+          Ok(false) => {
+            eprintln!("Archive checksum is invalid. Deleting archive");
+            std::fs::remove_file(&archive_file_path)?;
+            process::exit(7);
+          }
+          Err(e) => {
+            eprintln!("Cannot validate archive checksum: {}", e);
+            process::exit(8);
+          }
+        }
+      } else {
+        println!("Download URL is not found: skip archive checksum verification");
+      }
+
+      let unpack = if archive_file_path.ends_with(".zip") {
         unpack_zip
       } else {
         unpack_zstd
       };
-
-      // Verify downloaded archive
-      match verify_archive(&redirect_file_path, &archive_file_path) {
-        Ok(true) => {
-          println!("Archive checksm validated");
-        }
-        Ok(false) => {
-          eprintln!("Archive checksum is invalid. Deleting archive");
-          std::fs::remove_file(&archive_file_path)?;
-          process::exit(7);
-        }
-        Err(e) => {
-          eprintln!("Cannot validate archive checksum: {}", e);
-          process::exit(8);
-        }
-      }
 
       // Unzip
       match unpack(&archive_file_path, &unpacked_file_path) {
@@ -254,22 +259,26 @@ fn main() -> anyhow::Result<()> {
       }
 
       // Verify checksum
-      println!("Verifying MD5 checksum...");
-      match verify_db(&redirect_file_path, &unpacked_file_path) {
-        Ok(true) => {
-          println!("Checksum is valid");
+      if redirect_file_path.try_exists().unwrap_or(false) {
+        println!("Verifying MD5 checksum...");
+        match verify_db(&redirect_file_path, &unpacked_file_path) {
+          Ok(true) => {
+            println!("Checksum is valid");
+          }
+          Ok(false) => {
+            eprintln!("MD5 checksums are not equal. Deleting archive and unpacked state.sql");
+            std::fs::remove_file(&unpacked_file_path)?;
+            std::fs::remove_file(&archive_file_path)?;
+            std::fs::remove_file(&redirect_file_path)?;
+            process::exit(4);
+          }
+          Err(e) => {
+            eprintln!("Cannot verify checksum: {}", e);
+            process::exit(5);
+          }
         }
-        Ok(false) => {
-          eprintln!("MD5 checksums are not equal. Deleting archive and unpacked state.sql");
-          std::fs::remove_file(&unpacked_file_path)?;
-          std::fs::remove_file(&archive_file_path)?;
-          std::fs::remove_file(&redirect_file_path)?;
-          process::exit(4);
-        }
-        Err(e) => {
-          eprintln!("Cannot verify checksum: {}", e);
-          process::exit(5);
-        }
+      } else {
+        println!("Download URL is not found: skip DB checksum verification");
       }
 
       backup_or_fail(&final_file_path);
@@ -278,8 +287,12 @@ fn main() -> anyhow::Result<()> {
       std::fs::rename(&unpacked_file_path, &final_file_path)
         .expect("Cannot rename downloaded file into state.sql");
 
-      std::fs::remove_file(&redirect_file_path)?;
-      std::fs::remove_file(&archive_file_path)?;
+      if redirect_file_path.try_exists().unwrap_or(false) {
+        std::fs::remove_file(&redirect_file_path)?;
+      }
+      if archive_file_path.try_exists().unwrap_or(false) {
+        std::fs::remove_file(&archive_file_path)?;
+      }
 
       println!("Done!");
       println!("Now you can run go-spacemesh as usually.");
