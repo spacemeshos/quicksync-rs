@@ -299,11 +299,13 @@ fn main() -> anyhow::Result<()> {
       std::fs::rename(&unpacked_file_path, &final_file_path)
         .expect("Cannot rename downloaded file into state.sql");
 
-      if redirect_file_path.try_exists().unwrap_or(false) {
-        std::fs::remove_file(&redirect_file_path)?;
-      }
       if archive_file_path.try_exists().unwrap_or(false) {
+        println!("Archive file is deleted.");
         std::fs::remove_file(&archive_file_path)?;
+      }
+      if redirect_file_path.try_exists().unwrap_or(false) {
+        println!("URL file is deleted.");
+        std::fs::remove_file(&redirect_file_path)?;
       }
 
       println!("Done!");
