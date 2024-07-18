@@ -90,21 +90,33 @@ fn go_spacemesh_default_path() -> &'static str {
   }
 }
 
-fn backup_or_fail(file_path: &PathBuf) -> () {
-  if file_path.try_exists().unwrap_or(false) {
-    println!(
-      "Backing up file: {}",
-      file_path.file_name().unwrap().to_str().unwrap()
-    );
-    match backup_file(&file_path) {
-      Ok(b) => {
-        let backup_name = b.to_str().expect("Cannot get a path of backed up file");
-        println!("File backed up to: {}", backup_name);
+fn backup_or_fail(file_path: PathBuf) {
+  match file_path.try_exists() {
+    Ok(true) => {
+      println!(
+        "Backing up file: {}",
+        file_path.file_name().unwrap().to_str().unwrap()
+      );
+      match backup_file(&file_path) {
+        Ok(b) => {
+          let backup_name = b.to_string_lossy();
+          println!("File backed up to: {}", backup_name);
+        }
+        Err(e) => {
+          eprintln!("Cannot create a backup file: {}", e);
+          process::exit(6);
+        }
       }
-      Err(e) => {
-        eprintln!("Cannot create a backup file: {}", e);
-        process::exit(6);
-      }
+    }
+    Ok(false) => {
+      println!(
+        "Skip backup: file {} not found",
+        file_path.to_string_lossy()
+      );
+    }
+    Err(e) => {
+      eprintln!("Cannot create a backup file: {}", e);
+      process::exit(6);
     }
   }
 }
@@ -281,17 +293,19 @@ fn main() -> anyhow::Result<()> {
         println!("Download URL is not found: skip DB checksum verification");
       }
 
-      backup_or_fail(&final_file_path);
-      backup_or_fail(&wal_file_path);
+      backup_or_fail(final_file_path.clone());
+      backup_or_fail(wal_file_path);
 
       std::fs::rename(&unpacked_file_path, &final_file_path)
         .expect("Cannot rename downloaded file into state.sql");
 
-      if redirect_file_path.try_exists().unwrap_or(false) {
-        std::fs::remove_file(&redirect_file_path)?;
-      }
       if archive_file_path.try_exists().unwrap_or(false) {
+        println!("Archive file is deleted.");
         std::fs::remove_file(&archive_file_path)?;
+      }
+      if redirect_file_path.try_exists().unwrap_or(false) {
+        println!("URL file is deleted.");
+        std::fs::remove_file(&redirect_file_path)?;
       }
 
       println!("Done!");
