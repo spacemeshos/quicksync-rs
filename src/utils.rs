@@ -81,7 +81,7 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
     .build()?;
 
   let path = format!("{}/state.zst", go_version);
-  let url = build_url(&download_url, &path);
+  let url = build_url(download_url, &path);
 
   let response = client.head(url).send()?;
 

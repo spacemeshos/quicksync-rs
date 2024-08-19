@@ -18,7 +18,7 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
   let mut file = OpenOptions::new()
     .create(true)
     .read(true)
-    .write(true)
+    .append(true)
     .open(file_path)?;
 
   let file_size = file.metadata()?.len();

@@ -141,7 +141,7 @@ fn main() -> anyhow::Result<()> {
           i64::from(get_last_layer_from_db(&db_file_path).or_else(|err| {
             eprintln!("{}", err);
             println!("Cannot read database, trating it as empty database");
-            return Ok::<i32, anyhow::Error>(0);
+            Ok::<i32, anyhow::Error>(0)
           })?)
         } else {
           println!("Database file is not found");
@@ -156,7 +156,7 @@ fn main() -> anyhow::Result<()> {
         let go_path_str = go_path
           .to_str()
           .expect("Cannot resolve path to go-spacemesh");
-        let go_version = get_version(&go_path_str)?;
+        let go_version = get_version(go_path_str)?;
         let quicksync_layer = fetch_latest_available_layer(&download_url, &go_version)?;
         println!("Latest layer in cloud: {}", quicksync_layer);
         Ok(())
