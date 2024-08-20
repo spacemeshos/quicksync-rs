@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
 use std::collections::VecDeque;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -10,7 +11,7 @@ use crate::eta::Eta;
 use crate::read_error_response::read_error_response;
 use crate::user_agent::APP_USER_AGENT;
 
-pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
+fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Result<()> {
   if let Some(dir) = file_path.parent() {
     fs::create_dir_all(dir)?;
   }
@@ -32,18 +33,20 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
     .header("Range", format!("bytes={}-", file_size))
     .send()?;
 
+  let code = response.status();
+  match code {
+    StatusCode::PARTIAL_CONTENT => {}
+    _ if code.is_success() => {
+      anyhow::bail!("expected {}, but got {}", StatusCode::PARTIAL_CONTENT, code);
+    }
+    _ => {
+      let err = read_error_response(response.text()?);
+      anyhow::bail!("failed to download from {url}: {code} {err}");
+    }
+  }
   let final_url = response.url().clone();
 
   fs::write(redirect_path, final_url.as_str())?;
-
-  let status = response.status();
-  if !status.is_success() {
-    let err = read_error_response(response.text()?);
-    anyhow::bail!(format!(
-      "Failed to download from {}: {} {}",
-      final_url, status, err
-    ));
-  }
 
   let content_len = response
     .headers()
@@ -53,7 +56,6 @@ pub fn download_file(url: &str, file_path: &Path, redirect_path: &Path) -> Resul
     .unwrap_or(0);
 
   let total_size = content_len + file_size;
-
   file.seek(SeekFrom::End(0))?;
 
   const MEASUREMENT_SIZE: usize = 500;
@@ -139,5 +141,76 @@ pub fn download_with_retries(
       }
       Err(e) => return Err(anyhow!(e)),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::fs;
+
+  #[test]
+  fn rejects_not_206() {
+    let mut server = mockito::Server::new();
+
+    let mock = server.mock("GET", "/").with_status(200).create();
+
+    let tmpdir = tempfile::tempdir().unwrap();
+    let file_path = tmpdir.path().join("file.bin");
+    let redirect_path = tmpdir.path().join("redirect.txt");
+
+    let result = super::download_file(&server.url(), &file_path, &redirect_path);
+    let err = result.unwrap_err();
+    assert_eq!(
+      err.to_string(),
+      "expected 206 Partial Content, but got 200 OK"
+    );
+
+    mock.assert();
+  }
+
+  #[test]
+  fn fails_when_server_fails() {
+    let mut server = mockito::Server::new();
+
+    let mock = server.mock("GET", "/").with_status(500).create();
+
+    let tmpdir = tempfile::tempdir().unwrap();
+    let file_path = tmpdir.path().join("file.bin");
+    let redirect_path = tmpdir.path().join("redirect.txt");
+
+    let result = super::download_file(&server.url(), &file_path, &redirect_path);
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("failed to download from"));
+
+    mock.assert();
+  }
+
+  #[test]
+  fn downloads_file() {
+    let mut server = mockito::Server::new();
+
+    let binary = b"1234567890";
+
+    let mock = server
+      .mock("GET", "/file")
+      .with_status(206)
+      .with_header("Content-Length", &format!("{}", binary.len()))
+      .with_body(binary)
+      .create();
+
+    let tmpdir = tempfile::tempdir().unwrap();
+    let file_path = tmpdir.path().join("file.bin");
+    let redirect_path = tmpdir.path().join("redirect.txt");
+
+    let url = server.url() + "/file";
+    super::download_file(&url, &file_path, &redirect_path).unwrap();
+
+    let content = fs::read(file_path).unwrap();
+    assert_eq!(content, binary);
+
+    let redirect_url = fs::read_to_string(redirect_path).unwrap();
+    assert_eq!(redirect_url, url);
+
+    mock.assert();
   }
 }
