@@ -1,7 +1,9 @@
 use chrono::Duration;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::path::Path;
 use std::process;
+use std::{env, path::PathBuf};
 use url::Url;
 
 mod checksum;
@@ -17,6 +19,7 @@ mod unpack;
 mod user_agent;
 mod utils;
 
+use anyhow::Context;
 use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
@@ -121,6 +124,11 @@ fn backup_or_fail(file_path: PathBuf) {
   }
 }
 
+fn resolve_path(relative_path: &Path) -> anyhow::Result<PathBuf> {
+  let current_dir = env::current_dir()?;
+  Ok(current_dir.join(relative_path))
+}
+
 fn main() -> anyhow::Result<()> {
   let cli = Cli::parse();
 
@@ -166,7 +174,7 @@ fn main() -> anyhow::Result<()> {
     Commands::Download {
       node_data,
       go_spacemesh_path,
-      download_url,
+      mut download_url,
       max_retries,
     } => {
       let dir_path = node_data;
@@ -179,43 +187,45 @@ fn main() -> anyhow::Result<()> {
       let wal_file_path = dir_path.join("state.sql-wal");
 
       // Download archive if needed
-      let archive_file_path = if !archive_zip_file_path.try_exists().unwrap_or(false)
-        && !archive_zstd_file_path.try_exists().unwrap_or(false)
-      {
+      let archive_file_path = if archive_zip_file_path.try_exists().unwrap_or(false) {
+        archive_zip_file_path
+      } else if archive_zstd_file_path.try_exists().unwrap_or(false) {
+        archive_zstd_file_path
+      } else {
+        let archive_file_path = archive_zstd_file_path;
         println!("Downloading the latest database...");
         let url = if redirect_file_path.try_exists().unwrap_or(false) {
           std::fs::read_to_string(&redirect_file_path)?
         } else {
-          let go_path = resolve_path(&go_spacemesh_path).unwrap();
-          let path = format!("{}/state.zst", &get_version(&go_path)?);
-          let url = build_url(&download_url, &path);
-          url.to_string()
+          let go_path = resolve_path(&go_spacemesh_path).context("checking node version")?;
+          let version = get_version(&go_path)?;
+          download_url
+            .path_segments_mut()
+            .map_err(|e| anyhow::anyhow!("parsing download url: {e:?}"))?
+            .extend(&[&version, "state.zst"]);
+          download_url.to_string()
         };
 
-        if let Err(e) =
-          download_with_retries(&url, &temp_file_path, &redirect_file_path, max_retries)
-        {
-          eprintln!(
-            "Failed to download a file after {} attempts: {}",
-            max_retries, e
-          );
-          process::exit(1);
+        if let Some(dir) = temp_file_path.parent() {
+          std::fs::create_dir_all(dir)?;
         }
 
-        let archive_file_path = if url.ends_with(".zip") {
-          archive_zip_file_path
-        } else {
-          archive_zstd_file_path
-        };
+        let mut file = OpenOptions::new()
+          .create(true)
+          .read(true)
+          .append(true)
+          .open(&temp_file_path)?;
+
+        if let Err(e) = download_with_retries(&url, &mut file, &redirect_file_path, max_retries) {
+          eprintln!("Failed to download a file after {max_retries} attempts: {e}",);
+          process::exit(1);
+        }
+        drop(file);
 
         // Rename `state.download` -> `state.zst`
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
         archive_file_path
-      } else if archive_zip_file_path.try_exists().unwrap_or(false) {
-        archive_zip_file_path
-      } else {
-        archive_zstd_file_path
       };
 
       if redirect_file_path.try_exists().unwrap_or(false) {

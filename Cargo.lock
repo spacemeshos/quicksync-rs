@@ -1226,6 +1226,7 @@ dependencies = [
  "duration-string",
  "md5",
  "mockito",
+ "rand",
  "regex",
  "reqwest",
  "rusqlite",

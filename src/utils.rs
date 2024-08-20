@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
 use reqwest::{blocking::Client, redirect};
-use std::{env, path::PathBuf};
+use std::path::{Path, PathBuf};
 use url::Url;
 
 use crate::user_agent::APP_USER_AGENT;
@@ -19,22 +19,7 @@ pub fn calculate_latest_layer(
   Ok(delta.num_milliseconds() / layer_duration.num_milliseconds())
 }
 
-pub fn resolve_path(relative_path: &PathBuf) -> Result<PathBuf> {
-  let current_dir = env::current_dir()?;
-  let resolved_path = current_dir.join(relative_path);
-  Ok(resolved_path)
-}
-
-pub fn build_url(base: &Url, path: &str) -> Url {
-  let mut url = base.clone();
-  url
-    .path_segments_mut()
-    .expect("cannot be base")
-    .extend(path.split('/'));
-  url
-}
-
-pub fn backup_file(original_path: &PathBuf) -> Result<PathBuf> {
+pub fn backup_file(original_path: &Path) -> Result<PathBuf> {
   if !original_path.exists() {
     anyhow::bail!("No file to make a backup");
   }
@@ -76,8 +61,11 @@ pub fn fetch_latest_available_layer(download_url: &Url, go_version: &str) -> Res
     .timeout(std::time::Duration::from_secs(30))
     .build()?;
 
-  let path = format!("{}/state.zst", go_version);
-  let url = build_url(download_url, &path);
+  let mut url = download_url.clone();
+  url
+    .path_segments_mut()
+    .unwrap()
+    .extend(&[go_version, "state.zst"]);
 
   let response = client.head(url).send()?;
 
