@@ -25,7 +25,6 @@ use download::download_with_retries;
 use go_spacemesh::get_version;
 use parsers::*;
 use sql::get_last_layer_from_db;
-use unpack::{unpack_zip, unpack_zstd};
 use utils::*;
 
 #[derive(Parser, Debug)]
@@ -249,14 +248,7 @@ fn main() -> anyhow::Result<()> {
         println!("Download URL is not found: skip archive checksum verification");
       }
 
-      let unpack = if archive_file_path.ends_with(".zip") {
-        unpack_zip
-      } else {
-        unpack_zstd
-      };
-
-      // Unzip
-      match unpack(&archive_file_path, &unpacked_file_path) {
+      match unpack::unpack(&archive_file_path, &unpacked_file_path) {
         Ok(_) => {
           println!("Archive unpacked successfully");
         }
