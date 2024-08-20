@@ -153,10 +153,7 @@ fn main() -> anyhow::Result<()> {
         println!("Current network layer: {}", time_layer);
 
         let go_path = resolve_path(&go_spacemesh_path).unwrap();
-        let go_path_str = go_path
-          .to_str()
-          .expect("Cannot resolve path to go-spacemesh");
-        let go_version = get_version(go_path_str)?;
+        let go_version = get_version(&go_path)?;
         let quicksync_layer = fetch_latest_available_layer(&download_url, &go_version)?;
         println!("Latest layer in cloud: {}", quicksync_layer);
         Ok(())
@@ -190,10 +187,7 @@ fn main() -> anyhow::Result<()> {
           std::fs::read_to_string(&redirect_file_path)?
         } else {
           let go_path = resolve_path(&go_spacemesh_path).unwrap();
-          let go_path_str = go_path
-            .to_str()
-            .expect("Cannot resolve path to go-spacemesh");
-          let path = format!("{}/state.zst", &get_version(go_path_str)?);
+          let path = format!("{}/state.zst", &get_version(&go_path)?);
           let url = build_url(&download_url, &path);
           url.to_string()
         };

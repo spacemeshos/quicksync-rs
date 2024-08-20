@@ -25,10 +25,6 @@ pub fn resolve_path(relative_path: &PathBuf) -> Result<PathBuf> {
   Ok(resolved_path)
 }
 
-pub fn trim_version(version: &str) -> &str {
-  version.split('+').next().unwrap_or(version)
-}
-
 pub fn build_url(base: &Url, path: &str) -> Url {
   let mut url = base.clone();
   url

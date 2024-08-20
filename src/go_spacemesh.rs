@@ -1,21 +1,17 @@
 use anyhow::Result;
-use std::{io::ErrorKind, process::Command};
+use std::{io::ErrorKind, path::Path, process::Command};
 
-use crate::utils::trim_version;
-
-pub fn get_version(path: &str) -> Result<String> {
+pub fn get_version(path: &Path) -> Result<String> {
   let output = Command::new(path)
     .arg("version")
     .output()
     .map_err(|error| match error.kind() {
       ErrorKind::NotFound => {
-        anyhow::anyhow!("Executable not found at path: {}", path)
+        anyhow::anyhow!("executable not found at path: {}", path.display())
       }
-      other_error => panic!("Unexpected error: {:?}", other_error),
+      other_error => anyhow::anyhow!("unexpected error: {other_error}"),
     })?;
 
   let version = String::from_utf8(output.stdout)?;
-  let trimmed = trim_version(version.trim()).to_string();
-
-  Ok(trimmed)
+  Ok(version.split('+').next().unwrap().to_string())
 }
