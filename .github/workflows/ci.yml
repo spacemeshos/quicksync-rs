@@ -80,6 +80,27 @@ jobs:
             target/release/quicksync${{ matrix.os == 'windows-2022' && '.exe' || '' }}
           if-no-files-found: error
 
+  test:
+    runs-on: ${{ matrix.os }}
+    needs:
+      - check
+      - fmt
+      - clippy
+    strategy:
+      fail-fast: true
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-latest-arm-8-cores
+          - macos-13
+          - [self-hosted, macos, arm64]
+          - windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@1.80
+      - run: cargo test
+
   coverage:
     runs-on: [ubuntu-latest]
     steps:
