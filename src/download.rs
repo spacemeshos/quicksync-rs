@@ -117,6 +117,7 @@ pub(crate) fn download_with_retries<W: Write + Seek>(
   file: &mut W,
   redirect_path: &Path,
   max_retries: u32,
+  retry_delay: std::time::Duration,
 ) -> Result<()> {
   let mut attempts = 0;
 
@@ -126,7 +127,7 @@ pub(crate) fn download_with_retries<W: Write + Seek>(
       Ok(()) => return Ok(()),
       Err(e) if attempts <= max_retries => {
         println!("Download error: {e}. Attempt {attempts} / {max_retries}",);
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(retry_delay);
       }
       Err(e) => return Err(anyhow!(e)),
     }
@@ -135,6 +136,7 @@ pub(crate) fn download_with_retries<W: Write + Seek>(
 
 #[cfg(test)]
 mod tests {
+  use core::time;
   use std::{
     cmp::min,
     fs,
@@ -317,7 +319,14 @@ mod tests {
     };
 
     let url = server.url() + "/file";
-    super::download_with_retries(&url, &mut file, &redirect_path, 1).unwrap();
+    super::download_with_retries(
+      &url,
+      &mut file,
+      &redirect_path,
+      1,
+      time::Duration::from_millis(1),
+    )
+    .unwrap();
 
     mock_redirect.assert();
     mock.assert();

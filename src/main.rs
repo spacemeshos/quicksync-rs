@@ -1,6 +1,7 @@
 use chrono::Duration;
 use clap::{Parser, Subcommand};
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::process;
 use std::{env, path::PathBuf};
@@ -215,8 +216,15 @@ fn main() -> anyhow::Result<()> {
           .append(true)
           .open(&temp_file_path)?;
 
-        if let Err(e) = download_with_retries(&url, &mut file, &redirect_file_path, max_retries) {
+        if let Err(e) = download_with_retries(
+          &url,
+          &mut file,
+          &redirect_file_path,
+          max_retries,
+          std::time::Duration::from_secs(5),
+        ) {
           eprintln!("Failed to download a file after {max_retries} attempts: {e}",);
+          file.flush()?;
           process::exit(1);
         }
         drop(file);
