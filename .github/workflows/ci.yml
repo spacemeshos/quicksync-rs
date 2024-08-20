@@ -76,20 +76,6 @@ jobs:
         with:
           key: ${{ join( matrix.os, '-' ) }}
 
-      - name: Install SQLite3 (Linux Arm64)
-        if: matrix.artifact-name == 'linux-arm64'
-        run: sudo apt-get install libsqlite3-dev
-
-      - name: Install SQLite3 (Windows)
-        if: matrix.artifact-name == 'windows'
-        run: |
-          choco install -y wget
-          cd C:\
-          mkdir lib
-          cd lib
-          wget https://github.com/buggins/ddbc/raw/master/libs/win64/sqlite3.lib
-          echo "LIB=C:\lib" >> $env:GITHUB_ENV
-
       - name: Build
         run: cargo build --release
 
