@@ -37,12 +37,7 @@ jobs:
         with:
           components: clippy
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Annotate commit with clippy warnings
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --workspace
+      - uses: clechasseur/rs-clippy-check@v3
 
   build:
     name: Build library
