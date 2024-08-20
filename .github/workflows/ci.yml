@@ -11,10 +11,8 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: true
-      - uses: dtolnay/rust-toolchain@1.74.1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-features
 
@@ -22,8 +20,8 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@1.74.1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
@@ -32,22 +30,18 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Annotate commit with clippy warnings
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features --workspace
+      - uses: clechasseur/rs-clippy-check@v3
 
   build:
     name: Build library
     runs-on: ${{ matrix.os }}
     needs:
+      - check
       - fmt
       - clippy
     strategy:
@@ -66,28 +60,14 @@ jobs:
           - os: macos-13
             artifact-name: macos
 
-          - os: windows-2019
+          - os: windows-2022
             artifact-name: windows
     steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@1.74.1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.80
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ join( matrix.os, '-' ) }}
-
-      - name: Install SQLite3 (Linux Arm64)
-        if: matrix.artifact-name == 'linux-arm64'
-        run: sudo apt-get install libsqlite3-dev
-
-      - name: Install SQLite3 (Windows)
-        if: matrix.artifact-name == 'windows'
-        run: |
-          choco install -y wget
-          cd C:\
-          mkdir lib
-          cd lib
-          wget https://github.com/buggins/ddbc/raw/master/libs/win64/sqlite3.lib
-          echo "LIB=C:\lib" >> $env:GITHUB_ENV
 
       - name: Build
         run: cargo build --release
@@ -97,15 +77,13 @@ jobs:
         with:
           name: quicksync-${{ matrix.artifact-name }}
           path: |
-            target/release/quicksync${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+            target/release/quicksync${{ matrix.os == 'windows-2022' && '.exe' || '' }}
           if-no-files-found: error
 
   coverage:
     runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@1.80
       - run: cargo install cargo-tarpaulin
@@ -122,7 +100,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
