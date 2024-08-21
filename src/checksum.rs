@@ -14,14 +14,11 @@ use crate::{
 
 fn get_link_to_db_md5(url: &Url) -> Result<Url> {
   let url_str = url.as_str();
-  if url_str.ends_with(".sql.zip") {
-    let new_url_str = url_str.replace(".sql.zip", ".sql.md5");
-    Ok(Url::parse(&new_url_str)?)
-  } else if url_str.ends_with(".sql.zst") {
+  if url_str.ends_with(".sql.zst") {
     let new_url_str = url_str.replace(".sql.zst", ".sql.md5");
     Ok(Url::parse(&new_url_str)?)
   } else {
-    anyhow::bail!("URL does not end with .sql.zip")
+    anyhow::bail!("URL does not end with .sql.zst")
   }
 }
 
