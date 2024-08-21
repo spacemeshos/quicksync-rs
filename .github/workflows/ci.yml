@@ -1,6 +1,8 @@
 on:
   pull_request:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -90,7 +92,7 @@ jobs:
       fail-fast: true
       matrix:
         os:
-          - ubuntu-22.04
+          - ubuntu-latest
           - ubuntu-latest-arm-8-cores
           - macos-13
           - [self-hosted, macos, arm64]
