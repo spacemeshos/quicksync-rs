@@ -14,7 +14,6 @@ mod go_spacemesh;
 mod parsers;
 mod read_error_response;
 mod reader_with_bytes;
-mod reader_with_progress;
 mod sql;
 mod unpack;
 mod user_agent;
@@ -178,21 +177,14 @@ fn main() -> anyhow::Result<()> {
       max_retries,
     } => {
       let dir_path = node_data;
-      let temp_file_path = dir_path.join("state.download");
       let redirect_file_path = dir_path.join("state.url");
-      let archive_zip_file_path = dir_path.join("state.zip");
-      let archive_zstd_file_path = dir_path.join("state.zst");
+      let archive_file_path = dir_path.join("state.zst");
       let unpacked_file_path = dir_path.join("state_downloaded.sql");
       let final_file_path = dir_path.join("state.sql");
       let wal_file_path = dir_path.join("state.sql-wal");
 
       // Download archive if needed
-      let archive_file_path = if archive_zip_file_path.try_exists().unwrap_or(false) {
-        archive_zip_file_path
-      } else if archive_zstd_file_path.try_exists().unwrap_or(false) {
-        archive_zstd_file_path
-      } else {
-        let archive_file_path = archive_zstd_file_path;
+      if !archive_file_path.try_exists().unwrap_or(false) {
         println!("Downloading the latest database...");
         let url = if redirect_file_path.try_exists().unwrap_or(false) {
           std::fs::read_to_string(&redirect_file_path)?
@@ -206,6 +198,7 @@ fn main() -> anyhow::Result<()> {
           download_url.to_string()
         };
 
+        let temp_file_path = dir_path.join("state.download");
         if let Some(dir) = temp_file_path.parent() {
           std::fs::create_dir_all(dir)?;
         }
@@ -214,7 +207,8 @@ fn main() -> anyhow::Result<()> {
           .create(true)
           .read(true)
           .append(true)
-          .open(&temp_file_path)?;
+          .open(&temp_file_path)
+          .with_context(|| format!("creating temp file: {}", temp_file_path.display()))?;
 
         if let Err(e) = download_with_retries(
           &url,
@@ -232,8 +226,7 @@ fn main() -> anyhow::Result<()> {
         // Rename `state.download` -> `state.zst`
         std::fs::rename(&temp_file_path, &archive_file_path)?;
         println!("Archive downloaded!");
-        archive_file_path
-      };
+      }
 
       if redirect_file_path.try_exists().unwrap_or(false) {
         println!("Verifying the checksum, it may take some time...");
@@ -262,6 +255,7 @@ fn main() -> anyhow::Result<()> {
         }
         Err(e) => {
           if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            // FIXME: use ErrorKind::StorageFull once it's stabilized (https://github.com/rust-lang/rust/issues/86442)
             if io_err.raw_os_error() == Some(28) {
               eprintln!("Cannot unpack archive: not enough disk space");
               std::fs::remove_file(&unpacked_file_path)?;
