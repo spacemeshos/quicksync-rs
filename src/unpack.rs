@@ -16,8 +16,7 @@ pub(crate) fn unpack(archive_path: &Path, outpath: &Path) -> Result<()> {
 
   decoder.window_log_max(31)?;
   if let Some(p) = outpath.parent() {
-    std::fs::create_dir_all(outpath)
-      .with_context(|| format!("creating directory: {}", p.display()))?;
+    std::fs::create_dir_all(p).with_context(|| format!("creating directory: {}", p.display()))?;
   }
   let outfile = File::create(outpath)
     .with_context(|| format!("creating file to unpack into at: {}", outpath.display()))?;
