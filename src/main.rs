@@ -337,11 +337,7 @@ fn main() -> anyhow::Result<()> {
         eprintln!("State file not found: {}", state_sql_path.display());
         process::exit(1);
       }
-      let result = partial_restore(
-        start_layer,
-        &state_sql_path.into_os_string().into_string().unwrap(),
-        jump_back,
-      );
+      let result = partial_restore(start_layer, &state_sql_path, jump_back);
       if result.is_err() {
         process::exit(1);
       }
