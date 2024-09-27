@@ -12,6 +12,7 @@ mod download;
 mod eta;
 mod go_spacemesh;
 mod parsers;
+mod partial_quicksync;
 mod read_error_response;
 mod reader_with_bytes;
 mod sql;
@@ -24,6 +25,7 @@ use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
 use parsers::*;
+use partial_quicksync::partial_restore;
 use sql::get_last_layer_from_db;
 use utils::*;
 
@@ -78,6 +80,18 @@ enum Commands {
     /// Maximum retries amount for downloading (or resuming download) if something went wrong
     #[clap(short = 'r', long, default_value = "10")]
     max_retries: u32,
+  },
+  /// Uses partial recovery quicksync method
+  Partial {
+    /// Path to the node state.sql
+    #[clap(short = 's', long)]
+    state_sql: PathBuf,
+    /// Starting layer to recover from OR 0 to determine latest in the db
+    #[clap(short = 'l', long, default_value = "0")]
+    start_layer: i64,
+    /// Jump-back to recover earlier than latest layer. It will jump back one row in recovery metadata
+    #[clap(short = 'j', long, default_value = "0")]
+    jump_back: usize,
   },
 }
 
@@ -310,6 +324,28 @@ fn main() -> anyhow::Result<()> {
       println!("Now you can run go-spacemesh as usually.");
 
       Ok(())
+    }
+    Commands::Partial {
+      state_sql,
+      start_layer,
+      jump_back,
+    } => {
+      let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
+      if state_sql_path.try_exists().unwrap_or(false) {
+        println!("State file found: {}", state_sql_path.display());
+      } else {
+        eprintln!("State file not found: {}", state_sql_path.display());
+        process::exit(1);
+      }
+      let result = partial_restore(
+        start_layer,
+        &state_sql_path.into_os_string().into_string().unwrap(),
+        jump_back,
+      );
+      if result.is_err() {
+        process::exit(1);
+      }
+      result
     }
   }
 }
