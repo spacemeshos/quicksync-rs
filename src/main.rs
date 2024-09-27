@@ -20,7 +20,7 @@ mod unpack;
 mod user_agent;
 mod utils;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
@@ -331,17 +331,17 @@ fn main() -> anyhow::Result<()> {
       jump_back,
     } => {
       let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
-      if state_sql_path.try_exists().unwrap_or(false) {
-        println!("State file found: {}", state_sql_path.display());
-      } else {
-        eprintln!("State file not found: {}", state_sql_path.display());
-        process::exit(1);
+      if !state_sql_path
+        .try_exists()
+        .context("checking if state file exists")?
+      {
+        return Err(anyhow!("state file not found: {:?}", state_sql_path));
       }
-      let result = partial_restore(start_layer, &state_sql_path, jump_back);
-      if result.is_err() {
-        process::exit(1);
-      }
-      result
+      partial_restore(
+        start_layer,
+        &state_sql_path.into_os_string().into_string().unwrap(),
+        jump_back,
+      )
     }
   }
 }

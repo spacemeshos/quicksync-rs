@@ -19,7 +19,7 @@ serde_json = "1.0.128"
 url = "2.5.0"
 zstd = "0.13.0"
 hex = "0.4"
-
+parse-display = "0.10.0"
 
 [dev-dependencies]
 mockito = "1.5.0"

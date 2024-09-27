@@ -1,17 +1,20 @@
 use anyhow::{Context, Result};
+// use parse_display::{Display, FromStr};
 use reqwest::blocking::Client;
 use rusqlite::Connection;
 use std::{
   env,
   fs::{self, File},
   io::{self, BufReader, BufWriter},
+  str::FromStr,
   time::Instant,
 };
 use zstd::stream::Decoder;
 
 const DEFAULT_BASE_URL: &str = "https://quicksync.spacemesh.network/partials";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, parse_display::FromStr)]
+#[display("{from},{to},{hash}")]
 struct RestorePoint {
   from: i64,
   to: i64,
@@ -37,28 +40,21 @@ fn get_previous_hash(layer_at: i64, conn: &Connection) -> Result<String> {
 
 fn find_start_points(layer_from: i64, metadata: &str, jump_back: usize) -> Vec<RestorePoint> {
   let mut result = Vec::new();
-  let mut continuous = false;
+
+  let mut target_index = 0;
 
   for (index, line) in metadata.lines().enumerate() {
     let items: Vec<&str> = line.split(',').collect();
-    let from: i64 = items[0].parse().unwrap();
     let to: i64 = items[1].parse().unwrap();
-
-    if to > layer_from && from <= layer_from || continuous {
-      continuous = true;
-      if index >= jump_back {
-        let jump_back_line = metadata.lines().nth(index - jump_back).unwrap();
-        let jump_back_items: Vec<&str> = jump_back_line.split(',').collect();
-
-        result.push(RestorePoint {
-          from: jump_back_items[0].parse().unwrap(),
-          to: jump_back_items[1].parse().unwrap(),
-          hash: jump_back_items[2].to_string(),
-        });
-      }
+    if to > layer_from {
+      target_index = index;
+      break;
     }
   }
-
+  target_index = target_index - jump_back;
+  for line in metadata.lines().skip(target_index) {
+    result.push(RestorePoint::from_str(line).unwrap());
+  }
   result
 }
 
@@ -188,16 +184,82 @@ pub fn partial_restore(layer_from: i64, target_db_path: &str, jump_back: usize) 
         )?;
       } else {
         decompress_file(source_db_path_zst, source_db_path)?;
+        fs::remove_file(source_db_path_zst)?;
       }
 
       println!("Restoring from {} to {}...", point.from, point.to);
       let start = Instant::now();
       execute_restore(&conn, &restore_string)?;
       fs::remove_file(source_db_path)?;
-      let _ = fs::remove_file(source_db_path_zst);
       let duration = start.elapsed();
       println!("Restored {} to {} in {:?}", point.from, point.to, duration);
     }
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use anyhow::Result;
+  use rusqlite::Connection;
+  use tempfile::tempdir;
+
+  fn create_test_db() -> Result<(tempfile::TempDir, String)> {
+    let dir = tempdir()?;
+    let db_path = dir.path().join("test.db");
+    let conn = Connection::open(&db_path)?;
+    conn.execute(
+      "CREATE TABLE layers (id INTEGER, applied_block INTEGER, aggregated_hash BLOB)",
+      [],
+    )?;
+    conn.execute(
+      "INSERT INTO layers (id, applied_block, aggregated_hash) VALUES (?, ?, ?), (?, ?, ?)",
+      rusqlite::params![1, 100, 0xAAAA, 2, 200, 0xBBBB],
+    )?;
+    Ok((dir, db_path.to_str().unwrap().to_string()))
+  }
+
+  #[test]
+  fn test_get_base_url() {
+    std::env::set_var("QS_BASE_URL", "https://test.com");
+    assert_eq!(get_base_url(), "https://test.com");
+    std::env::remove_var("QS_BASE_URL");
+    assert_eq!(get_base_url(), DEFAULT_BASE_URL);
+  }
+
+  #[test]
+  fn test_find_start_points() {
+    let metadata = "0,100,aaaa\n101,200,bbbb\n201,300,ijkl\n";
+    let result = find_start_points(150, metadata, 0);
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].from, 101);
+    assert_eq!(result[0].to, 200);
+    assert_eq!(result[0].hash, "bbbb");
+
+    let result = find_start_points(150, metadata, 1);
+    println!("{:?}", result);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].from, 0);
+    assert_eq!(result[0].to, 100);
+    assert_eq!(result[0].hash, "aaaa");
+  }
+
+  #[test]
+  fn test_get_latest_from_db() -> Result<()> {
+    let (_dir, db_path) = create_test_db()?;
+    let result = get_latest_from_db(&db_path)?;
+    assert_eq!(result, 2);
+    Ok(())
+  }
+
+  #[test]
+  fn test_get_user_version() -> Result<()> {
+    let (_dir, db_path) = create_test_db()?;
+    let conn = Connection::open(&db_path)?;
+    conn.execute("PRAGMA user_version = 42", [])?;
+    let result = get_user_version(&db_path)?;
+    assert_eq!(result, 42);
+    Ok(())
+  }
 }
