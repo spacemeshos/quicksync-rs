@@ -196,7 +196,7 @@ impl RestorePoint {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rusqlite::Connection;
+  use rusqlite::{Connection, DatabaseName};
   use tempfile::tempdir;
 
   fn create_test_db() -> Connection {
@@ -343,9 +343,7 @@ mod tests {
         insert_layer(&conn, point.to - 1, 111, &hash);
         let dir = tempdir().unwrap();
         let checkpoint = dir.path().join("checkpoint.db");
-        conn
-          .backup(rusqlite::DatabaseName::Main, &checkpoint, None)
-          .unwrap();
+        conn.backup(DatabaseName::Main, &checkpoint, None).unwrap();
 
         let file_url = file_url(user_version, point, None);
         server
