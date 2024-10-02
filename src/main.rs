@@ -86,12 +86,12 @@ enum Commands {
     /// Path to the node state.sql
     #[clap(short = 's', long)]
     state_sql: PathBuf,
-    /// Starting layer to recover from OR 0 to determine latest in the db
-    #[clap(short = 'l', long, default_value = "0")]
-    start_layer: i64,
     /// Jump-back to recover earlier than latest layer. It will jump back one row in recovery metadata
-    #[clap(short = 'j', long, default_value = "0")]
+    #[clap(short = 'j', long, default_value_t = 0)]
     jump_back: usize,
+    /// URL to download parts from
+    #[clap(short = 'u', long, default_value = partial_quicksync::DEFAULT_BASE_URL)]
+    base_url: String,
   },
 }
 
@@ -327,8 +327,8 @@ fn main() -> anyhow::Result<()> {
     }
     Commands::Partial {
       state_sql,
-      start_layer,
       jump_back,
+      base_url,
     } => {
       let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
       if !state_sql_path
@@ -337,11 +337,8 @@ fn main() -> anyhow::Result<()> {
       {
         return Err(anyhow!("state file not found: {:?}", state_sql_path));
       }
-      partial_restore(
-        start_layer,
-        &state_sql_path.into_os_string().into_string().unwrap(),
-        jump_back,
-      )
+      let conn = rusqlite::Connection::open(state_sql_path)?;
+      partial_restore(&base_url,  &conn, jump_back)
     }
   }
 }
