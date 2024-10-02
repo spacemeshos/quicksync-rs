@@ -135,9 +135,10 @@ fn decompress_file(input_path: &Path, output_path: &Path) -> Result<()> {
   Ok(())
 }
 
-pub fn partial_restore(base_url: &str, conn: &Connection, jump_back: usize) -> Result<()> {
+pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) -> Result<()> {
   let client = Client::new();
-  let user_version = get_user_version(conn)?;
+  let conn = Connection::open(target_db_path)?;
+  let user_version = get_user_version(&conn)?;
   let remote_metadata = client
     .get(format!("{}/{}/metadata.csv", base_url, user_version))
     .send()?
@@ -146,7 +147,7 @@ pub fn partial_restore(base_url: &str, conn: &Connection, jump_back: usize) -> R
     .get(format!("{}/{}/restore.sql", base_url, user_version))
     .send()?
     .text()?;
-  let latest_layer = get_latest_from_db(conn)?;
+  let latest_layer = get_latest_from_db(&conn)?;
   let layer_from = latest_layer + 1; // start with the first layer that is not in the DB
   let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
   if start_points.is_empty() {
@@ -154,9 +155,16 @@ pub fn partial_restore(base_url: &str, conn: &Connection, jump_back: usize) -> R
   }
   let total = start_points.len();
   println!("Found {total} potential restore points");
+  drop(conn.close());
 
   for (idx, p) in start_points.into_iter().enumerate() {
-    let previous_hash = get_previous_hash(p.from, conn)?;
+    // Reopen the DB on each iteration to force flushing all operations
+    // on the end of each iteration, when the connection is dropped.
+    //
+    // Note: the restore SQL query attaches the downloaded DB, but it
+    // does not DETACH it because it causes problems.
+    let conn = Connection::open(target_db_path)?;
+    let previous_hash = get_previous_hash(p.from, &conn)?;
     anyhow::ensure!(
       previous_hash == p.hash[..4],
       "unexpected hash: '{previous_hash}' doesn't match restore point {p:?}",
@@ -199,8 +207,11 @@ mod tests {
   use rusqlite::{Connection, DatabaseName};
   use tempfile::tempdir;
 
-  fn create_test_db() -> Connection {
-    let conn = Connection::open_in_memory().unwrap();
+  fn create_test_db(path: Option<&Path>) -> Connection {
+    let conn = match path {
+      Some(path) => Connection::open(path).unwrap(),
+      None => Connection::open_in_memory().unwrap(),
+    };
     conn
       .execute(
         "CREATE TABLE layers (id INTEGER, applied_block INTEGER, aggregated_hash BLOB)",
@@ -249,7 +260,7 @@ mod tests {
 
   #[test]
   fn getting_previous_hash() {
-    let conn = create_test_db();
+    let conn = create_test_db(None);
     insert_layer(&conn, 2, 100, &[0xAA, 0xBB]);
     let result = get_previous_hash(3, &conn).unwrap();
     assert_eq!("aabb", result);
@@ -257,7 +268,7 @@ mod tests {
 
   #[test]
   fn test_get_latest_from_db() {
-    let conn = create_test_db();
+    let conn = create_test_db(None);
     insert_layer(&conn, 2, 100, &[0xAA, 0xBB]);
     let result = get_latest_from_db(&conn).unwrap();
     assert_eq!(result, 2);
@@ -265,7 +276,7 @@ mod tests {
 
   #[test]
   fn test_get_user_version() {
-    let conn = create_test_db();
+    let conn = create_test_db(None);
     conn.execute("PRAGMA user_version = 42", []).unwrap();
     let result = get_user_version(&conn).unwrap();
     assert_eq!(result, 42);
@@ -297,8 +308,11 @@ mod tests {
 
   #[test]
   fn partial_restore() {
-    let conn = create_test_db();
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("state.db");
+    let conn = create_test_db(Some(&db_path));
     insert_layer(&conn, 99, 100, &[0xBB, 0xBB]);
+
     let mut server = mockito::Server::new();
     let user_version = 0;
 
@@ -322,13 +336,14 @@ mod tests {
       .create();
 
     // Restore SQL just copies contents of the `layers` table
+    // Note: there's no detach because the real restore query also
+    // doesn't do this (it causes problems).
     let mock_query = server
       .mock("GET", format!("/{user_version}/restore.sql").as_str())
       .with_status(200)
       .with_body(
         r#"ATTACH DATABASE 'backup_source.db' AS src;
-           INSERT OR IGNORE INTO layers SELECT * from src.layers;
-           DETACH DATABASE src"#,
+           INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
       )
       .create();
 
@@ -338,10 +353,10 @@ mod tests {
       .map(|(hash, point)| {
         // For simplicity, the database used to restore contains only
         // the last layer of the point and its expected hash.
-        let conn = create_test_db();
+        let conn = create_test_db(None);
         let hash = hex::decode(hash).unwrap();
         insert_layer(&conn, point.to - 1, 111, &hash);
-        let dir = tempdir().unwrap();
+
         let checkpoint = dir.path().join("checkpoint.db");
         conn.backup(DatabaseName::Main, &checkpoint, None).unwrap();
 
@@ -354,7 +369,7 @@ mod tests {
       })
       .collect::<Vec<_>>();
 
-    super::partial_restore(&server.url(), &conn, 0).unwrap();
+    super::partial_restore(&server.url(), &db_path, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -371,7 +386,9 @@ mod tests {
 
   #[test]
   fn fails_on_hash_mismatch() {
-    let conn = create_test_db();
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("state.db");
+    let conn = create_test_db(Some(&db_path));
     insert_layer(&conn, 99, 100, &[0xFF, 0xFF]);
     let mut server = mockito::Server::new();
     let user_version = 0;
@@ -389,7 +406,7 @@ mod tests {
       .with_body(".import backup_source.db layers")
       .create();
 
-    let err = super::partial_restore(&server.url(), &conn, 0).unwrap_err();
+    let err = super::partial_restore(&server.url(), &db_path, 0).unwrap_err();
     assert!(err.to_string().contains("unexpected hash"));
     mock_metadata.assert();
     mock_query.assert();

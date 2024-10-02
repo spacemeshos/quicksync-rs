@@ -337,8 +337,7 @@ fn main() -> anyhow::Result<()> {
       {
         return Err(anyhow!("state file not found: {:?}", state_sql_path));
       }
-      let conn = rusqlite::Connection::open(state_sql_path)?;
-      partial_restore(&base_url,  &conn, jump_back)
+      partial_restore(&base_url, &state_sql_path, jump_back)
     }
   }
 }
