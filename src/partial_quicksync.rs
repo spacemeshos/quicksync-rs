@@ -310,8 +310,10 @@ mod tests {
   fn partial_restore() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("state.db");
-    let conn = create_test_db(Some(&db_path));
-    insert_layer(&conn, 99, 100, &[0xBB, 0xBB]);
+    {
+      let conn = create_test_db(Some(&db_path));
+      insert_layer(&conn, 99, 100, &[0xBB, 0xBB]);
+    }
 
     let mut server = mockito::Server::new();
     let user_version = 0;
@@ -377,6 +379,7 @@ mod tests {
       mock.assert();
     }
 
+    let conn = Connection::open(&db_path).unwrap();
     let latest = get_latest_from_db(&conn).unwrap();
     assert_eq!(latest, points.last().unwrap().1.to - 1);
 
@@ -388,8 +391,10 @@ mod tests {
   fn fails_on_hash_mismatch() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("state.db");
-    let conn = create_test_db(Some(&db_path));
-    insert_layer(&conn, 99, 100, &[0xFF, 0xFF]);
+    {
+      let conn = create_test_db(Some(&db_path));
+      insert_layer(&conn, 99, 100, &[0xFF, 0xFF]);
+    }
     let mut server = mockito::Server::new();
     let user_version = 0;
 
