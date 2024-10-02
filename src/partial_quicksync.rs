@@ -46,7 +46,7 @@ fn find_restore_points(layer_from: u32, metadata: &str, jump_back: usize) -> Vec
 
   for (index, line) in metadata.trim().lines().enumerate() {
     let point = RestorePoint::from_str(line.trim()).expect("parsing restore point");
-    if point.to > layer_from && target_index.is_none() {
+    if point.from > layer_from && point.to > layer_from && target_index.is_none() {
       target_index = Some(index);
     }
     all_points.push(point);
