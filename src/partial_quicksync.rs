@@ -155,11 +155,14 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
   }
   let total = start_points.len();
   println!("Found {total} potential restore points");
-  drop(conn.close());
+  conn.close().expect("closing DB connection");
+
+  let source_db_path_zst = &Path::new("backup_source.db.zst");
+  let source_db_path = &Path::new("backup_source.db");
 
   for (idx, p) in start_points.into_iter().enumerate() {
     // Reopen the DB on each iteration to force flushing all operations
-    // on the end of each iteration, when the connection is dropped.
+    // on the end of each iteration, when the connection is closed.
     //
     // Note: the restore SQL query attaches the downloaded DB, but it
     // does not DETACH it because it causes problems.
@@ -169,14 +172,13 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
       previous_hash == p.hash[..4],
       "unexpected hash: '{previous_hash}' doesn't match restore point {p:?}",
     );
-    let source_db_path_zst = &Path::new("backup_source.db.zst");
-    let source_db_path = &Path::new("backup_source.db");
 
     if download_file(&client, base_url, user_version, &p, source_db_path_zst).is_err() {
       download_file(&client, base_url, user_version, &p, source_db_path)?;
     } else {
       decompress_file(source_db_path_zst, source_db_path)?;
-      fs::remove_file(source_db_path_zst)?;
+      fs::remove_file(source_db_path_zst)
+        .with_context(|| format!("removing {}", source_db_path_zst.display()))?;
     }
 
     println!("[{idx}/{total}] Restoring from {} to {}...", p.from, p.to);
@@ -184,12 +186,16 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
     conn
       .execute_batch(&restore_string)
       .context("executing restore")?;
-    fs::remove_file(source_db_path)?;
+    conn.close().expect("closing DB connection");
+
     let duration = start.elapsed();
     println!(
       "[{idx}/{total}] Restored {} to {} in {:?}",
       p.from, p.to, duration
     );
+
+    fs::remove_file(source_db_path)
+      .with_context(|| format!("removing {}", source_db_path.display()))?;
   }
   Ok(())
 }
