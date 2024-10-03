@@ -46,24 +46,26 @@ fn find_restore_points(layer_from: u32, metadata: &str, jump_back: usize) -> Vec
 
   for (index, line) in metadata.trim().lines().enumerate() {
     let point = RestorePoint::from_str(line.trim()).expect("parsing restore point");
-    if point.from > layer_from && point.to > layer_from && target_index.is_none() {
+    if (point.from..point.to).contains(&layer_from) && target_index.is_none() {
       target_index = Some(index);
     }
     all_points.push(point);
   }
   // A None `target_index` means there aren't any layers > `layer_from`
   // in the data described by `metadata`.
-  let target_index = if let Some(t) = target_index {
-    if t >= jump_back {
-      t - jump_back
-    } else {
-      0
+  match target_index {
+    Some(t) => {
+      all_points.drain(..t.saturating_sub(jump_back));
     }
-  } else {
-    return vec![];
+    None if jump_back == 0 => {
+      all_points.drain(..);
+    }
+    None => {
+      all_points.drain(..all_points.len().saturating_sub(jump_back));
+    }
   };
 
-  all_points.split_off(target_index)
+  all_points
 }
 
 fn get_latest_from_db(conn: &Connection) -> Result<u32> {
@@ -135,7 +137,12 @@ fn decompress_file(input_path: &Path, output_path: &Path) -> Result<()> {
   Ok(())
 }
 
-pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) -> Result<()> {
+pub fn partial_restore(
+  base_url: &str,
+  target_db_path: &Path,
+  untrusted_layers: u32,
+  jump_back: usize,
+) -> Result<()> {
   let client = Client::new();
   let conn = Connection::open(target_db_path)?;
   let user_version = get_user_version(&conn)?;
@@ -143,16 +150,17 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
     .get(format!("{}/{}/metadata.csv", base_url, user_version))
     .send()?
     .text()?;
+
+  let latest_layer = get_latest_from_db(&conn)?;
+  let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
+  let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
+  anyhow::ensure!(!start_points.is_empty(), "no suitable restore point found");
+
   let restore_string = client
     .get(format!("{}/{}/restore.sql", base_url, user_version))
     .send()?
     .text()?;
-  let latest_layer = get_latest_from_db(&conn)?;
-  let layer_from = latest_layer + 1; // start with the first layer that is not in the DB
-  let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
-  if start_points.is_empty() {
-    anyhow::bail!("No suitable restore point found");
-  }
+
   let total = start_points.len();
   println!("Found {total} potential restore points");
   conn.close().expect("closing DB connection");
@@ -167,11 +175,13 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
     // Note: the restore SQL query attaches the downloaded DB, but it
     // does not DETACH it because it causes problems.
     let conn = Connection::open(target_db_path)?;
-    let previous_hash = get_previous_hash(p.from, &conn)?;
-    anyhow::ensure!(
-      previous_hash == p.hash[..4],
-      "unexpected hash: '{previous_hash}' doesn't match restore point {p:?}",
-    );
+    if p.from != 0 {
+      let previous_hash = get_previous_hash(p.from, &conn)?;
+      anyhow::ensure!(
+        previous_hash == p.hash[..4],
+        "unexpected hash: '{previous_hash}' doesn't match restore point {p:?}",
+      );
+    }
 
     if download_file(&client, base_url, user_version, &p, source_db_path_zst).is_err() {
       download_file(&client, base_url, user_version, &p, source_db_path)?;
@@ -202,8 +212,12 @@ pub fn partial_restore(base_url: &str, target_db_path: &Path, jump_back: usize) 
 
 #[cfg(test)]
 impl RestorePoint {
-  fn new(from: u32, to: u32, hash: String) -> Self {
-    Self { from, to, hash }
+  fn new<H: Into<String>>(from: u32, to: u32, hash: H) -> Self {
+    Self {
+      from,
+      to,
+      hash: hash.into(),
+    }
   }
 }
 
@@ -228,31 +242,64 @@ mod tests {
   }
 
   #[test]
-  fn test_find_start_points() {
+  fn restore_points_dont_have_missing_data() {
     let metadata = r#"
-    0,100,aaaa
-    101,200,bbbb
-    201,300,ijkl
+    100,200,bbbb
+    200,300,ijkl
     "#;
+    // 90-100 are not available for restore
+    let result = find_restore_points(90, metadata, 0);
+    assert!(result.is_empty());
+  }
+
+  #[test]
+  fn finding_restore_points() {
+    let points = [
+      RestorePoint::new(0, 100, "aaaa"),
+      RestorePoint::new(100, 200, "bbbb"),
+      RestorePoint::new(200, 300, "ijkl"),
+    ];
+    let metadata = &points
+      .iter()
+      .map(|p| p.to_string())
+      .collect::<Vec<_>>()
+      .join("\n");
+
+    let result = find_restore_points(99, metadata, 0);
+    assert_eq!(result, points);
+
+    let result = find_restore_points(100, metadata, 0);
+    assert_eq!(result, points[1..]);
+
+    let result = find_restore_points(101, metadata, 0);
+    assert_eq!(result, points[1..]);
+
+    let result = find_restore_points(101, metadata, 1);
+    assert_eq!(result, points);
+
     let result = find_restore_points(150, metadata, 0);
-    assert_eq!(result.len(), 2);
-    assert_eq!(result[0].from, 101);
-    assert_eq!(result[0].to, 200);
-    assert_eq!(result[0].hash, "bbbb");
+    assert_eq!(result, points[1..]);
 
     let result = find_restore_points(150, metadata, 1);
-    assert_eq!(result.len(), 3);
-    assert_eq!(result[0].from, 0);
-    assert_eq!(result[0].to, 100);
-    assert_eq!(result[0].hash, "aaaa");
+    assert_eq!(result, points);
 
     // `jump_back` over the first point
-    let result2 = find_restore_points(150, metadata, 5);
-    assert_eq!(result, result2);
+    let result = find_restore_points(150, metadata, 5);
+    assert_eq!(result, points);
 
-    // no points for the requested starting layer
-    let result = find_restore_points(500, metadata, 1);
+    let result = find_restore_points(300, metadata, 0);
     assert!(result.is_empty());
+
+    // synced but jumping back 1
+    let result = find_restore_points(300, metadata, 1);
+    assert_eq!(result, points[2..]);
+
+    // synced but jumping back 1
+    let result = find_restore_points(300, metadata, 2);
+    assert_eq!(result, points[1..]);
+
+    let result = find_restore_points(500, metadata, 1);
+    assert_eq!(result, points[2..]);
   }
 
   fn insert_layer(conn: &Connection, id: u32, applied_block: i64, hash: &[u8]) {
@@ -325,10 +372,10 @@ mod tests {
     let user_version = 0;
 
     let points = [
-      ("bbbb", RestorePoint::new(0, 100, "aaaa".into())),
-      ("cccc", RestorePoint::new(100, 200, "bbbb".into())),
-      ("dddd", RestorePoint::new(200, 300, "cccc".into())),
-      ("eeee", RestorePoint::new(300, 400, "dddd".into())),
+      ("bbbb", RestorePoint::new(0, 100, "aaaa")),
+      ("cccc", RestorePoint::new(100, 200, "bbbb")),
+      ("dddd", RestorePoint::new(200, 300, "cccc")),
+      ("eeee", RestorePoint::new(300, 400, "dddd")),
     ];
 
     let metadata = points
@@ -338,8 +385,7 @@ mod tests {
       .join("\n");
 
     let mock_metadata = server
-      .mock("GET", format!("/{user_version}/metadata.csv").as_str())
-      .with_status(200)
+      .mock("GET", "/0/metadata.csv")
       .with_body(metadata)
       .create();
 
@@ -347,8 +393,7 @@ mod tests {
     // Note: there's no detach because the real restore query also
     // doesn't do this (it causes problems).
     let mock_query = server
-      .mock("GET", format!("/{user_version}/restore.sql").as_str())
-      .with_status(200)
+      .mock("GET", "/0/restore.sql")
       .with_body(
         r#"ATTACH DATABASE 'backup_source.db' AS src;
            INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
@@ -371,13 +416,90 @@ mod tests {
         let file_url = file_url(user_version, point, None);
         server
           .mock("GET", format!("/{file_url}").as_str())
-          .with_status(200)
           .with_body(std::fs::read(&checkpoint).unwrap())
           .create()
       })
       .collect::<Vec<_>>();
 
-    super::partial_restore(&server.url(), &db_path, 0).unwrap();
+    super::partial_restore(&server.url(), &db_path, 0, 0).unwrap();
+
+    mock_metadata.assert();
+    mock_query.assert();
+    for mock in data_mocks {
+      mock.assert();
+    }
+
+    let conn = Connection::open(&db_path).unwrap();
+    let latest = get_latest_from_db(&conn).unwrap();
+    assert_eq!(latest, points.last().unwrap().1.to - 1);
+
+    let result = get_previous_hash(latest + 1, &conn).unwrap();
+    assert_eq!(result, points.last().unwrap().0);
+  }
+
+  #[test]
+  fn partial_restore_with_untrusted_layers() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("state.db");
+    {
+      let conn = create_test_db(Some(&db_path));
+      insert_layer(&conn, 99, 100, &[0xBB, 0xBB]);
+    }
+
+    let mut server = mockito::Server::new();
+    let user_version = 0;
+
+    let points = [
+      ("bbbb", RestorePoint::new(0, 100, "aaaa")),
+      ("cccc", RestorePoint::new(100, 200, "bbbb")),
+      ("dddd", RestorePoint::new(200, 300, "cccc")),
+      ("eeee", RestorePoint::new(300, 400, "dddd")),
+    ];
+
+    let metadata = points
+      .iter()
+      .map(|(_, p)| p.to_string())
+      .collect::<Vec<_>>()
+      .join("\n");
+
+    let mock_metadata = server
+      .mock("GET", "/0/metadata.csv")
+      .with_body(metadata)
+      .create();
+
+    // Restore SQL just copies contents of the `layers` table
+    // Note: there's no detach because the real restore query also
+    // doesn't do this (it causes problems).
+    let mock_query = server
+      .mock("GET", "/0/restore.sql")
+      .with_body(
+        r#"ATTACH DATABASE 'backup_source.db' AS src;
+           INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
+      )
+      .create();
+
+    let data_mocks = points
+      .iter()
+      .map(|(hash, point)| {
+        // For simplicity, the database used to restore contains only
+        // the last layer of the point and its expected hash.
+        let conn = create_test_db(None);
+        let hash = hex::decode(hash).unwrap();
+        insert_layer(&conn, point.to - 1, 111, &hash);
+
+        let checkpoint = dir.path().join("checkpoint.db");
+        conn.backup(DatabaseName::Main, &checkpoint, None).unwrap();
+
+        let file_url = file_url(user_version, point, None);
+        server
+          .mock("GET", format!("/{file_url}").as_str())
+          .with_body(std::fs::read(&checkpoint).unwrap())
+          .create()
+      })
+      .collect::<Vec<_>>();
+
+    let untrusted_layers = 10;
+    super::partial_restore(&server.url(), &db_path, untrusted_layers, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -407,19 +529,38 @@ mod tests {
     let metadata = RestorePoint::new(100, 200, "aaaa".to_string()).to_string();
     let mock_metadata = server
       .mock("GET", format!("/{user_version}/metadata.csv").as_str())
-      .with_status(200)
       .with_body(metadata)
       .create();
 
     let mock_query = server
       .mock("GET", format!("/{user_version}/restore.sql").as_str())
-      .with_status(200)
       .with_body(".import backup_source.db layers")
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, 0).unwrap_err();
+    let err = super::partial_restore(&server.url(), &db_path, 0, 0).unwrap_err();
     assert!(err.to_string().contains("unexpected hash"));
     mock_metadata.assert();
     mock_query.assert();
+  }
+
+  #[test]
+  fn no_matching_restore_points() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("state.db");
+    {
+      let conn = create_test_db(Some(&db_path));
+      insert_layer(&conn, 80, 100, &[0xFF, 0xFF]);
+    }
+    let mut server = mockito::Server::new();
+
+    let metadata = RestorePoint::new(200, 300, "aaaa".to_string()).to_string();
+    let mock_metadata = server
+      .mock("GET", "/0/metadata.csv")
+      .with_body(metadata)
+      .create();
+
+    let err = super::partial_restore(&server.url(), &db_path, 0, 0).unwrap_err();
+    assert!(err.to_string().contains("no suitable restore point found"));
+    mock_metadata.assert();
   }
 }
