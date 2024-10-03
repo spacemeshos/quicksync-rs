@@ -342,7 +342,14 @@ fn main() -> anyhow::Result<()> {
       {
         return Err(anyhow!("state file not found: {:?}", state_sql_path));
       }
-      partial_restore(&base_url, &state_sql_path, untrusted_layers, jump_back)
+      let download_path = resolve_path(Path::new(".")).unwrap();
+      partial_restore(
+        &base_url,
+        &state_sql_path,
+        &download_path,
+        untrusted_layers,
+        jump_back,
+      )
     }
   }
 }

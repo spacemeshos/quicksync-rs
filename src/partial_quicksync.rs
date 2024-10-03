@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
 use rusqlite::Connection;
+use std::{fs, io};
 use std::{
-  fs::{self, File},
-  io::{self, BufReader, BufWriter},
+  fs::File,
+  io::{BufReader, BufWriter},
   path::Path,
   str::FromStr,
   time::Instant,
@@ -140,6 +141,7 @@ fn decompress_file(input_path: &Path, output_path: &Path) -> Result<()> {
 pub fn partial_restore(
   base_url: &str,
   target_db_path: &Path,
+  download_path: &Path,
   untrusted_layers: u32,
   jump_back: usize,
 ) -> Result<()> {
@@ -165,8 +167,8 @@ pub fn partial_restore(
   println!("Found {total} potential restore points");
   conn.close().expect("closing DB connection");
 
-  let source_db_path_zst = &Path::new("backup_source.db.zst");
-  let source_db_path = &Path::new("backup_source.db");
+  let source_db_path_zst = &download_path.join("backup_source.db.zst");
+  let source_db_path = &download_path.join("backup_source.db");
 
   for (idx, p) in start_points.into_iter().enumerate() {
     // Reopen the DB on each iteration to force flushing all operations
@@ -213,11 +215,8 @@ pub fn partial_restore(
 #[cfg(test)]
 impl RestorePoint {
   fn new<H: Into<String>>(from: u32, to: u32, hash: H) -> Self {
-    Self {
-      from,
-      to,
-      hash: hash.into(),
-    }
+    let hash = hash.into();
+    Self { from, to, hash }
   }
 }
 
@@ -369,7 +368,6 @@ mod tests {
     }
 
     let mut server = mockito::Server::new();
-    let user_version = 0;
 
     let points = [
       ("bbbb", RestorePoint::new(0, 100, "aaaa")),
@@ -394,10 +392,11 @@ mod tests {
     // doesn't do this (it causes problems).
     let mock_query = server
       .mock("GET", "/0/restore.sql")
-      .with_body(
-        r#"ATTACH DATABASE 'backup_source.db' AS src;
-           INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
-      )
+      .with_body(format!(
+        r#"ATTACH DATABASE '{}' AS src;
+         INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
+        dir.path().join("backup_source.db").display(),
+      ))
       .create();
 
     let data_mocks = points
@@ -413,7 +412,7 @@ mod tests {
         let checkpoint = dir.path().join("checkpoint.db");
         conn.backup(DatabaseName::Main, &checkpoint, None).unwrap();
 
-        let file_url = file_url(user_version, point, None);
+        let file_url = file_url(0, point, None);
         server
           .mock("GET", format!("/{file_url}").as_str())
           .with_body(std::fs::read(&checkpoint).unwrap())
@@ -421,7 +420,7 @@ mod tests {
       })
       .collect::<Vec<_>>();
 
-    super::partial_restore(&server.url(), &db_path, 0, 0).unwrap();
+    super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -447,7 +446,6 @@ mod tests {
     }
 
     let mut server = mockito::Server::new();
-    let user_version = 0;
 
     let points = [
       ("bbbb", RestorePoint::new(0, 100, "aaaa")),
@@ -472,10 +470,11 @@ mod tests {
     // doesn't do this (it causes problems).
     let mock_query = server
       .mock("GET", "/0/restore.sql")
-      .with_body(
-        r#"ATTACH DATABASE 'backup_source.db' AS src;
-           INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
-      )
+      .with_body(format!(
+        r#"ATTACH DATABASE '{}' AS src;
+         INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
+        dir.path().join("backup_source.db").display(),
+      ))
       .create();
 
     let data_mocks = points
@@ -490,7 +489,7 @@ mod tests {
         let checkpoint = dir.path().join("checkpoint.db");
         conn.backup(DatabaseName::Main, &checkpoint, None).unwrap();
 
-        let file_url = file_url(user_version, point, None);
+        let file_url = file_url(0, point, None);
         server
           .mock("GET", format!("/{file_url}").as_str())
           .with_body(std::fs::read(&checkpoint).unwrap())
@@ -499,7 +498,7 @@ mod tests {
       .collect::<Vec<_>>();
 
     let untrusted_layers = 10;
-    super::partial_restore(&server.url(), &db_path, untrusted_layers, 0).unwrap();
+    super::partial_restore(&server.url(), &db_path, dir.path(), untrusted_layers, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -524,20 +523,19 @@ mod tests {
       insert_layer(&conn, 99, 100, &[0xFF, 0xFF]);
     }
     let mut server = mockito::Server::new();
-    let user_version = 0;
 
     let metadata = RestorePoint::new(100, 200, "aaaa".to_string()).to_string();
     let mock_metadata = server
-      .mock("GET", format!("/{user_version}/metadata.csv").as_str())
+      .mock("GET", "/0/metadata.csv")
       .with_body(metadata)
       .create();
 
     let mock_query = server
-      .mock("GET", format!("/{user_version}/restore.sql").as_str())
+      .mock("GET", "/0/restore.sql")
       .with_body(".import backup_source.db layers")
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, 0, 0).unwrap_err();
+    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err.to_string().contains("unexpected hash"));
     mock_metadata.assert();
     mock_query.assert();
@@ -559,7 +557,7 @@ mod tests {
       .with_body(metadata)
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, 0, 0).unwrap_err();
+    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err.to_string().contains("no suitable restore point found"));
     mock_metadata.assert();
   }
