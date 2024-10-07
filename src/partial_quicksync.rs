@@ -193,7 +193,8 @@ pub fn partial_restore(
         .with_context(|| format!("removing {}", source_db_path_zst.display()))?;
     }
 
-    println!("[{idx}/{total}] Restoring from {} to {}...", p.from, p.to);
+    let current_idx = idx + 1;
+    println!("[{current_idx}/{total}] Restoring from {} to {}...", p.from, p.to);
     let start = Instant::now();
     conn
       .execute_batch(&restore_string)
@@ -202,7 +203,7 @@ pub fn partial_restore(
 
     let duration = start.elapsed();
     println!(
-      "[{idx}/{total}] Restored {} to {} in {:?}",
+      "[{current_idx}/{total}] Restored {} to {} in {:?}",
       p.from, p.to, duration
     );
 
