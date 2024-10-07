@@ -156,7 +156,10 @@ pub fn partial_restore(
   let latest_layer = get_latest_from_db(&conn)?;
   let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
   let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
-  anyhow::ensure!(!start_points.is_empty(), "No suitable restore points found, seems that state.sql is too old");
+  anyhow::ensure!(
+    !start_points.is_empty(),
+    "No suitable restore points found, seems that state.sql is too old"
+  );
 
   let restore_string = client
     .get(format!("{}/{}/restore.sql", base_url, user_version))
@@ -164,6 +167,9 @@ pub fn partial_restore(
     .text()?;
 
   let total = start_points.len();
+  println!(
+    "Looking for restore points with untrusted_layers={untrusted_layers}, jump_back={jump_back}"
+  );
   println!("Found {total} potential restore points");
   conn.close().expect("closing DB connection");
 
@@ -194,7 +200,10 @@ pub fn partial_restore(
     }
 
     let current_idx = idx + 1;
-    println!("[{current_idx}/{total}] Restoring from {} to {}...", p.from, p.to);
+    println!(
+      "[{current_idx}/{total}] Restoring from {} to {}...",
+      p.from, p.to
+    );
     let start = Instant::now();
     conn
       .execute_batch(&restore_string)
@@ -559,7 +568,9 @@ mod tests {
       .create();
 
     let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
-    assert!(err.to_string().contains("No suitable restore points found, seems that state.sql is too old"));
+    assert!(err
+      .to_string()
+      .contains("No suitable restore points found, seems that state.sql is too old"));
     mock_metadata.assert();
   }
 }
