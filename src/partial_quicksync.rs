@@ -11,7 +11,7 @@ use std::{
 };
 use zstd::stream::Decoder;
 
-pub(crate) const DEFAULT_BASE_URL: &str = "https://quicksync.spacemesh.network/partials";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://quicksync-partials.spacemesh.network";
 
 #[derive(Clone, Debug, PartialEq, Eq, parse_display::Display, parse_display::FromStr)]
 #[display("{from},{to},{hash}")]
