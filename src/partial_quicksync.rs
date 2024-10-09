@@ -104,13 +104,25 @@ fn download_file(
     .extension()
     .is_some_and(|ext| ext == "zst")
     .then_some(".zst");
-  let url = format!("{}/{}", base_url, file_url(user_version, point, suffix));
-  println!("Downloading from {}", url);
-  let mut resp = client.get(&url).send().context("Failed to send request")?;
+  let version = env!("CARGO_PKG_VERSION");
+  let url_version = format!(
+    "{}/{}?version={}",
+    base_url,
+    file_url(user_version, point, suffix),
+    version
+  );
+  println!(
+    "Downloading from {}",
+    url_version.split('?').next().unwrap_or(&url_version)
+  );
+  let mut resp = client
+    .get(&url_version)
+    .send()
+    .context("Failed to send request")?;
   if !resp.status().is_success() {
     anyhow::bail!(
       "Failed to download file {}: HTTP status {}",
-      url,
+      url_version,
       resp.status()
     );
   }
@@ -149,7 +161,12 @@ pub fn partial_restore(
   let conn = Connection::open(target_db_path)?;
   let user_version = get_user_version(&conn)?;
   let remote_metadata = client
-    .get(format!("{}/{}/metadata.csv", base_url, user_version))
+    .get(format!(
+      "{}/{}/metadata.csv?version={}",
+      base_url,
+      user_version,
+      env!("CARGO_PKG_VERSION")
+    ))
     .send()?
     .text()?;
 
@@ -162,7 +179,12 @@ pub fn partial_restore(
   );
 
   let restore_string = client
-    .get(format!("{}/{}/restore.sql", base_url, user_version))
+    .get(format!(
+      "{}/{}/restore.sql?version={}",
+      base_url,
+      user_version,
+      env!("CARGO_PKG_VERSION")
+    ))
     .send()?
     .text()?;
 
@@ -233,6 +255,7 @@ impl RestorePoint {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use mockito::Matcher;
   use rusqlite::{Connection, DatabaseName};
   use tempfile::tempdir;
 
@@ -355,6 +378,10 @@ mod tests {
     let mut server = mockito::Server::new();
     let mock = server
       .mock("GET", format!("/{file_url}").as_str())
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_status(200)
       .with_body("file contents")
       .create();
@@ -394,6 +421,10 @@ mod tests {
 
     let mock_metadata = server
       .mock("GET", "/0/metadata.csv")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(metadata)
       .create();
 
@@ -402,6 +433,10 @@ mod tests {
     // doesn't do this (it causes problems).
     let mock_query = server
       .mock("GET", "/0/restore.sql")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(format!(
         r#"ATTACH DATABASE '{}' AS src;
          INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
@@ -425,6 +460,10 @@ mod tests {
         let file_url = file_url(0, point, None);
         server
           .mock("GET", format!("/{file_url}").as_str())
+          .match_query(Matcher::UrlEncoded(
+            "version".into(),
+            env!("CARGO_PKG_VERSION").into(),
+          ))
           .with_body(std::fs::read(&checkpoint).unwrap())
           .create()
       })
@@ -472,6 +511,10 @@ mod tests {
 
     let mock_metadata = server
       .mock("GET", "/0/metadata.csv")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(metadata)
       .create();
 
@@ -480,6 +523,10 @@ mod tests {
     // doesn't do this (it causes problems).
     let mock_query = server
       .mock("GET", "/0/restore.sql")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(format!(
         r#"ATTACH DATABASE '{}' AS src;
          INSERT OR IGNORE INTO layers SELECT * from src.layers;"#,
@@ -502,6 +549,10 @@ mod tests {
         let file_url = file_url(0, point, None);
         server
           .mock("GET", format!("/{file_url}").as_str())
+          .match_query(Matcher::UrlEncoded(
+            "version".into(),
+            env!("CARGO_PKG_VERSION").into(),
+          ))
           .with_body(std::fs::read(&checkpoint).unwrap())
           .create()
       })
@@ -537,11 +588,19 @@ mod tests {
     let metadata = RestorePoint::new(100, 200, "aaaa".to_string()).to_string();
     let mock_metadata = server
       .mock("GET", "/0/metadata.csv")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(metadata)
       .create();
 
     let mock_query = server
       .mock("GET", "/0/restore.sql")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(".import backup_source.db layers")
       .create();
 
@@ -564,6 +623,10 @@ mod tests {
     let metadata = RestorePoint::new(200, 300, "aaaa".to_string()).to_string();
     let mock_metadata = server
       .mock("GET", "/0/metadata.csv")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
       .with_body(metadata)
       .create();
 
