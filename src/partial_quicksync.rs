@@ -104,9 +104,19 @@ fn download_file(
     .extension()
     .is_some_and(|ext| ext == "zst")
     .then_some(".zst");
+  let version = env!("CARGO_PKG_VERSION");
   let url = format!("{}/{}", base_url, file_url(user_version, point, suffix));
+  let url_version = format!(
+    "{}/{}?version={}",
+    base_url,
+    file_url(user_version, point, suffix),
+    version
+  );
   println!("Downloading from {}", url);
-  let mut resp = client.get(&url).send().context("Failed to send request")?;
+  let mut resp = client
+    .get(&url_version)
+    .send()
+    .context("Failed to send request")?;
   if !resp.status().is_success() {
     anyhow::bail!(
       "Failed to download file {}: HTTP status {}",
@@ -162,7 +172,12 @@ pub fn partial_restore(
   );
 
   let restore_string = client
-    .get(format!("{}/{}/restore.sql", base_url, user_version))
+    .get(format!(
+      "{}/{}/restore.sql?version={}",
+      base_url,
+      user_version,
+      env!("CARGO_PKG_VERSION")
+    ))
     .send()?
     .text()?;
 
