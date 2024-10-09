@@ -335,6 +335,7 @@ fn main() -> anyhow::Result<()> {
       jump_back,
       base_url,
     } => {
+      println!("Partial quicksync is considered to be beta feature for now");
       let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
       if !state_sql_path
         .try_exists()
