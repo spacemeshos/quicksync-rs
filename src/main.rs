@@ -12,6 +12,7 @@ mod download;
 mod eta;
 mod go_spacemesh;
 mod parsers;
+mod partial_quicksync;
 mod read_error_response;
 mod reader_with_bytes;
 mod sql;
@@ -19,11 +20,12 @@ mod unpack;
 mod user_agent;
 mod utils;
 
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
 use parsers::*;
+use partial_quicksync::partial_restore;
 use sql::get_last_layer_from_db;
 use utils::*;
 
@@ -78,6 +80,22 @@ enum Commands {
     /// Maximum retries amount for downloading (or resuming download) if something went wrong
     #[clap(short = 'r', long, default_value = "10")]
     max_retries: u32,
+  },
+  /// Uses partial recovery quicksync method
+  Partial {
+    /// Path to the node state.sql
+    #[clap(short = 's', long)]
+    state_sql: PathBuf,
+    /// Number of layers present in the DB that are not trusted to be fully synced.
+    /// These layers will also be synced.
+    #[clap(long, default_value_t = 10)]
+    untrusted_layers: u32,
+    /// Jump-back to recover earlier than latest layer. It will jump back one row in recovery metadata
+    #[clap(short = 'j', long, default_value_t = 0)]
+    jump_back: usize,
+    /// URL to download parts from
+    #[clap(short = 'u', long, default_value = partial_quicksync::DEFAULT_BASE_URL)]
+    base_url: String,
   },
 }
 
@@ -310,6 +328,29 @@ fn main() -> anyhow::Result<()> {
       println!("Now you can run go-spacemesh as usually.");
 
       Ok(())
+    }
+    Commands::Partial {
+      state_sql,
+      untrusted_layers,
+      jump_back,
+      base_url,
+    } => {
+      println!("Warning: partial quicksync is considered to be beta feature for now");
+      let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
+      if !state_sql_path
+        .try_exists()
+        .context("checking if state file exists")?
+      {
+        return Err(anyhow!("state file not found: {:?}", state_sql_path));
+      }
+      let download_path = resolve_path(Path::new(".")).unwrap();
+      partial_restore(
+        &base_url,
+        &state_sql_path,
+        &download_path,
+        untrusted_layers,
+        jump_back,
+      )
     }
   }
 }

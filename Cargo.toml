@@ -1,6 +1,6 @@
 [package]
 name = "quicksync"
-version = "0.1.16"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,11 +13,13 @@ duration-string = "0.4.0"
 md5 = "0.7.0"
 regex = "1.11.0"
 reqwest = { version = "0.12.8", features = ["json", "stream", "blocking"] }
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "backup"] }
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 url = "2.5.0"
 zstd = "0.13.0"
+hex = "0.4"
+parse-display = "0.10.0"
 
 [dev-dependencies]
 mockito = "1.5.0"

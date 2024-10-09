@@ -4,7 +4,7 @@ When a new node joins the Spacemesh network, it must first get up to speed with 
 
 With Quicksync, instead of performing all of the syncing actions as stated above and calculating the network state from genesis, one just needs to download the current state from a trusted peer like the Spacemesh dev team or some other node. While this runs contrary to the web3 philosophy of "Don't trust, verify", we believe that this could be a choice some smeshers may be interested in given the high rate of trouble with syncing. Moreover, nothing precludes a smesher from verifying this state in the background once it is downloaded.
 
-The state (also called an archive) that is downloaded is in the form of a state.sql file and can either be downloaded automatically using Smapp, or manually by using the `quicksync-rs` utility. 
+The state (also called an archive) that is downloaded is in the form of a state.sql file and can either be downloaded automatically using Smapp, or manually by using the `quicksync-rs` utility.
 
 Instructions for using `quicksync-rs` to download the latest state are given below. Note that if you use the latest version of Smapp, it will automatically offer to use quicksync to fetch the latest state.
 
@@ -56,6 +56,16 @@ Listed below are the exit codes and what they mean:
 - `7` - Invalid checksum of archive.
 - `8` - Cannot validate archive checksum.
 
+
+# Partial quicksync
+
+It is also possible to download and apply delta-based quicksync. Assuming that the `state.sql` is already present, it's worth considering applying only deltas on top of that.
+Please note that syncing large portions will be faster with full quicksync, but if you are already synced and just need to catch up with the latest state, partial quicksync is the way to go.
+
+Partial quicksync works by checking the latest verified layer in the database and then downloading small files (usually about 50MB but up to 200MB) and applying them on top of the existing `state.sql`. Each batch can be interrupted.
+
+Restoring the same batch twice is considered a no-op and will not affect the database.
+
 ## Commands
 
 The list of available commands for the `quicksync` utility is presented below. Note that these commands are for Linux. Simply, Change `./quicksync` to `.\quicksync.exe` For the Windows commands.
@@ -63,5 +73,6 @@ The list of available commands for the `quicksync` utility is presented below. N
 - `./quicksync download`: Downloads the latest `state.sql` file.
 - `./quicksync check`: Checks if the current `state.sql` is up to date.
 - `./quicksync help`: Displays all operations that `quicksync` can perform.
+- `./quicksync partial`: Allows to work with delta based quicksync.
 - `./quicksync --version`: Displays the quicksync version.
 - `cargo run -- help`: Displays helpful commands for running the package. Relevant for developers.
