@@ -46,7 +46,7 @@ fn find_restore_points(layer_from: u32, metadata: &str, jump_back: usize) -> Vec
   let mut target_index = None;
 
   for (index, line) in metadata.trim().lines().enumerate() {
-    let point: RestorePoint = RestorePoint::from_str(line.trim()).expect("parsing restore point");
+    let point = RestorePoint::from_str(line.trim()).expect("parsing restore point");
     if (point.from..point.to).contains(&layer_from) && target_index.is_none() {
       target_index = Some(index);
     }
@@ -168,7 +168,7 @@ pub fn partial_restore(
       env!("CARGO_PKG_VERSION")
     ))
     .send()
-    .context(format!(
+    .with_context(|| format!(
       "Failed to fetch remote metadata.csv for user_version={}",
       user_version
     ))?;
@@ -180,7 +180,7 @@ pub fn partial_restore(
     );
   }
 
-  let remote_metadata = response.text().context(format!(
+  let remote_metadata = response.text().with_context(|| format!(
     "Failed to read remote metadata.csv for user_version={}",
     user_version
   ))?;
