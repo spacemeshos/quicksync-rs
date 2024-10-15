@@ -150,13 +150,12 @@ fn decompress_file(input_path: &Path, output_path: &Path) -> Result<()> {
   Ok(())
 }
 
-pub fn partial_restore(
+fn get_restore_points(
   base_url: &str,
   target_db_path: &Path,
-  download_path: &Path,
   untrusted_layers: u32,
   jump_back: usize,
-) -> Result<()> {
+) -> Result<(Vec<RestorePoint>, String, usize)> {
   let client = Client::new();
   let conn = Connection::open(target_db_path)?;
   let user_version = get_user_version(&conn)?;
@@ -197,6 +196,20 @@ pub fn partial_restore(
     "No suitable restore points found, seems that state.sql is too old"
   );
 
+  Ok((start_points, remote_metadata, user_version))
+}
+
+pub fn partial_restore(
+  base_url: &str,
+  target_db_path: &Path,
+  download_path: &Path,
+  untrusted_layers: u32,
+  jump_back: usize,
+) -> Result<()> {
+  let (start_points, _, user_version) =
+    get_restore_points(base_url, target_db_path, untrusted_layers, jump_back)?;
+  let client = Client::new();
+
   let restore_string = client
     .get(format!(
       "{}/{}/restore.sql?version={}",
@@ -212,7 +225,6 @@ pub fn partial_restore(
     "Looking for restore points with untrusted_layers={untrusted_layers}, jump_back={jump_back}"
   );
   println!("Found {total} potential restore points");
-  conn.close().expect("closing DB connection");
 
   let source_db_path_zst = &download_path.join("backup_source.db.zst");
   let source_db_path = &download_path.join("backup_source.db");
@@ -260,6 +272,24 @@ pub fn partial_restore(
     fs::remove_file(source_db_path)
       .with_context(|| format!("removing {}", source_db_path.display()))?;
   }
+  Ok(())
+}
+
+pub fn check_for_restore_points(
+  base_url: &str,
+  target_db_path: &Path,
+  untrusted_layers: u32,
+  jump_back: usize,
+) -> Result<()> {
+  let (start_points, _, _) =
+    get_restore_points(base_url, target_db_path, untrusted_layers, jump_back)?;
+
+  anyhow::ensure!(!start_points.is_empty(), "No restore points available.");
+
+  let first = start_points.first().unwrap();
+  let last = start_points.last().unwrap();
+  println!("Possible to restore from: {}", first.from);
+  println!("Possible to restore up to: {}", last.to);
   Ok(())
 }
 

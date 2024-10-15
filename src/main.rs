@@ -25,7 +25,7 @@ use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
 use parsers::*;
-use partial_quicksync::partial_restore;
+use partial_quicksync::{check_for_restore_points, partial_restore};
 use sql::get_last_layer_from_db;
 use utils::*;
 
@@ -83,6 +83,22 @@ enum Commands {
   },
   /// Uses partial recovery quicksync method
   Partial {
+    /// Path to the node state.sql
+    #[clap(short = 's', long)]
+    state_sql: PathBuf,
+    /// Number of layers present in the DB that are not trusted to be fully synced.
+    /// These layers will also be synced.
+    #[clap(long, default_value_t = 10)]
+    untrusted_layers: u32,
+    /// Jump-back to recover earlier than latest layer. It will jump back one row in recovery metadata
+    #[clap(short = 'j', long, default_value_t = 0)]
+    jump_back: usize,
+    /// URL to download parts from
+    #[clap(short = 'u', long, default_value = partial_quicksync::DEFAULT_BASE_URL)]
+    base_url: String,
+  },
+  /// Partial check availability
+  PartialCheck {
     /// Path to the node state.sql
     #[clap(short = 's', long)]
     state_sql: PathBuf,
@@ -351,6 +367,21 @@ fn main() -> anyhow::Result<()> {
         untrusted_layers,
         jump_back,
       )
+    }
+    Commands::PartialCheck {
+      state_sql,
+      base_url,
+      untrusted_layers,
+      jump_back,
+    } => {
+      let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
+      if !state_sql_path
+        .try_exists()
+        .context("checking if state file exists")?
+      {
+        return Err(anyhow!("state file not found: {:?}", state_sql_path));
+      }
+      check_for_restore_points(&base_url, &state_sql_path, untrusted_layers, jump_back)
     }
   }
 }
