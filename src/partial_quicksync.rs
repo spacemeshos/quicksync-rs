@@ -288,7 +288,8 @@ pub fn check_for_restore_points(
 
   let first = start_points.first().unwrap();
   let last = start_points.last().unwrap();
-  println!("Possible to restore from {} to {} ", first.from, last.to);
+  println!("Possible to restore from: {}", first.from);
+  println!("Possible to restore up to: {}", last.to);
   Ok(())
 }
 
