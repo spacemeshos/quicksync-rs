@@ -150,13 +150,12 @@ fn decompress_file(input_path: &Path, output_path: &Path) -> Result<()> {
   Ok(())
 }
 
-pub fn partial_restore(
+fn get_restore_points(
   base_url: &str,
   target_db_path: &Path,
-  download_path: &Path,
   untrusted_layers: u32,
   jump_back: usize,
-) -> Result<()> {
+) -> Result<(Vec<RestorePoint>, String, usize)> {
   let client = Client::new();
   let conn = Connection::open(target_db_path)?;
   let user_version = get_user_version(&conn)?;
@@ -197,6 +196,20 @@ pub fn partial_restore(
     "No suitable restore points found, seems that state.sql is too old"
   );
 
+  Ok((start_points, remote_metadata, user_version))
+}
+
+pub fn partial_restore(
+  base_url: &str,
+  target_db_path: &Path,
+  download_path: &Path,
+  untrusted_layers: u32,
+  jump_back: usize,
+) -> Result<()> {
+  let (start_points, _, user_version) =
+    get_restore_points(base_url, target_db_path, untrusted_layers, jump_back)?;
+  let client = Client::new();
+
   let restore_string = client
     .get(format!(
       "{}/{}/restore.sql?version={}",
@@ -212,7 +225,6 @@ pub fn partial_restore(
     "Looking for restore points with untrusted_layers={untrusted_layers}, jump_back={jump_back}"
   );
   println!("Found {total} potential restore points");
-  conn.close().expect("closing DB connection");
 
   let source_db_path_zst = &download_path.join("backup_source.db.zst");
   let source_db_path = &download_path.join("backup_source.db");
@@ -269,41 +281,9 @@ pub fn check_for_restore_points(
   untrusted_layers: u32,
   jump_back: usize,
 ) -> Result<()> {
-  let client = Client::new();
-  let conn = Connection::open(target_db_path)?;
-  let user_version = get_user_version(&conn)?;
-  let response = client
-    .get(format!(
-      "{}/{}/metadata.csv?version={}",
-      base_url,
-      user_version,
-      env!("CARGO_PKG_VERSION")
-    ))
-    .send()
-    .context(format!(
-      "Failed to fetch remote metadata.csv for user_version={}",
-      user_version
-    ))?;
+  let (start_points, _, _) =
+    get_restore_points(base_url, target_db_path, untrusted_layers, jump_back)?;
 
-  if response.status() == reqwest::StatusCode::NOT_FOUND {
-    anyhow::bail!(
-      "Remote server returned 404 for metadata.csv. User version {} might not exist.",
-      user_version
-    );
-  }
-
-  let remote_metadata = response.text().context(format!(
-    "Failed to read remote metadata.csv for user_version={}",
-    user_version
-  ))?;
-
-  let latest_layer = get_latest_from_db(&conn)?;
-  let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
-  let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
-  anyhow::ensure!(
-    !start_points.is_empty(),
-    "No suitable restore points found, seems that state.sql is too old"
-  );
   // The error occurs because `start_points.first()` returns an `Option<&RestorePoint>`,
   // which doesn't implement the `Display` trait. We need to handle the `Option` and
   // format the `RestorePoint` manually.
