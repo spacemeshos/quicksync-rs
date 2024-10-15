@@ -284,18 +284,11 @@ pub fn check_for_restore_points(
   let (start_points, _, _) =
     get_restore_points(base_url, target_db_path, untrusted_layers, jump_back)?;
 
-  // The error occurs because `start_points.first()` returns an `Option<&RestorePoint>`,
-  // which doesn't implement the `Display` trait. We need to handle the `Option` and
-  // format the `RestorePoint` manually.
-  start_points
-    .first()
-    .map(|first_point| println!("Possible to restore from: {}", first_point.from))
-    .ok_or_else(|| anyhow::anyhow!("No restore points available."))?;
+  anyhow::ensure!(!start_points.is_empty(), "No restore points available.");
 
-  start_points
-    .last()
-    .map(|last_point| println!("Possible to restore up to: {}", last_point.to))
-    .ok_or_else(|| anyhow::anyhow!("No restore points available."))?;
+  let first = start_points.first().unwrap();
+  let last = start_points.last().unwrap();
+  println!("Possible to restore from {} to {} ", first.from, last.to);
   Ok(())
 }
 
