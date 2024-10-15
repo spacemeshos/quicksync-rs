@@ -263,6 +263,62 @@ pub fn partial_restore(
   Ok(())
 }
 
+pub fn check_for_restore_points(
+  base_url: &str,
+  target_db_path: &Path,
+  untrusted_layers: u32,
+  jump_back: usize,
+) -> Result<()> {
+  let client = Client::new();
+  let conn = Connection::open(target_db_path)?;
+  let user_version = get_user_version(&conn)?;
+  let response = client
+    .get(format!(
+      "{}/{}/metadata.csv?version={}",
+      base_url,
+      user_version,
+      env!("CARGO_PKG_VERSION")
+    ))
+    .send()
+    .context(format!(
+      "Failed to fetch remote metadata.csv for user_version={}",
+      user_version
+    ))?;
+
+  if response.status() == reqwest::StatusCode::NOT_FOUND {
+    anyhow::bail!(
+      "Remote server returned 404 for metadata.csv. User version {} might not exist.",
+      user_version
+    );
+  }
+
+  let remote_metadata = response.text().context(format!(
+    "Failed to read remote metadata.csv for user_version={}",
+    user_version
+  ))?;
+
+  let latest_layer = get_latest_from_db(&conn)?;
+  let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
+  let start_points = find_restore_points(layer_from, &remote_metadata, jump_back);
+  anyhow::ensure!(
+    !start_points.is_empty(),
+    "No suitable restore points found, seems that state.sql is too old"
+  );
+  // The error occurs because `start_points.first()` returns an `Option<&RestorePoint>`,
+  // which doesn't implement the `Display` trait. We need to handle the `Option` and
+  // format the `RestorePoint` manually.
+  start_points
+    .first()
+    .map(|first_point| println!("Possible to restore from: {}", first_point.from))
+    .ok_or_else(|| anyhow::anyhow!("No restore points available."))?;
+
+  start_points
+    .last()
+    .map(|last_point| println!("Possible to restore up to: {}", last_point.to))
+    .ok_or_else(|| anyhow::anyhow!("No restore points available."))?;
+  Ok(())
+}
+
 #[cfg(test)]
 impl RestorePoint {
   fn new<H: Into<String>>(from: u32, to: u32, hash: H) -> Self {
