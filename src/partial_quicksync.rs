@@ -168,10 +168,12 @@ pub fn partial_restore(
       env!("CARGO_PKG_VERSION")
     ))
     .send()
-    .with_context(|| format!(
-      "Failed to fetch remote metadata.csv for user_version={}",
-      user_version
-    ))?;
+    .with_context(|| {
+      format!(
+        "Failed to fetch remote metadata.csv for user_version={}",
+        user_version
+      )
+    })?;
 
   if response.status() == reqwest::StatusCode::NOT_FOUND {
     anyhow::bail!(
@@ -180,10 +182,12 @@ pub fn partial_restore(
     );
   }
 
-  let remote_metadata = response.text().with_context(|| format!(
-    "Failed to read remote metadata.csv for user_version={}",
-    user_version
-  ))?;
+  let remote_metadata = response.text().with_context(|| {
+    format!(
+      "Failed to read remote metadata.csv for user_version={}",
+      user_version
+    )
+  })?;
 
   let latest_layer = get_latest_from_db(&conn)?;
   let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
