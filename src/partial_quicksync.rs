@@ -160,15 +160,34 @@ pub fn partial_restore(
   let client = Client::new();
   let conn = Connection::open(target_db_path)?;
   let user_version = get_user_version(&conn)?;
-  let remote_metadata = client
+  let response = client
     .get(format!(
       "{}/{}/metadata.csv?version={}",
       base_url,
       user_version,
       env!("CARGO_PKG_VERSION")
     ))
-    .send()?
-    .text()?;
+    .send()
+    .with_context(|| {
+      format!(
+        "Failed to fetch remote metadata.csv for user_version={}",
+        user_version
+      )
+    })?;
+
+  if response.status() == reqwest::StatusCode::NOT_FOUND {
+    anyhow::bail!(
+      "Remote server returned 404 for metadata.csv. User version {} might not exist.",
+      user_version
+    );
+  }
+
+  let remote_metadata = response.text().with_context(|| {
+    format!(
+      "Failed to read remote metadata.csv for user_version={}",
+      user_version
+    )
+  })?;
 
   let latest_layer = get_latest_from_db(&conn)?;
   let layer_from = (latest_layer + 1).saturating_sub(untrusted_layers);
@@ -634,6 +653,33 @@ mod tests {
     assert!(err
       .to_string()
       .contains("No suitable restore points found, seems that state.sql is too old"));
+    mock_metadata.assert();
+  }
+
+  #[test]
+  fn non_existing_user_version() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("state.db");
+    {
+      let conn = create_test_db(Some(&db_path));
+      insert_layer(&conn, 80, 100, &[0xFF, 0xFF]);
+    }
+    let mut server = mockito::Server::new();
+
+    let mock_metadata = server
+      .mock("GET", "/0/metadata.csv")
+      .match_query(Matcher::UrlEncoded(
+        "version".into(),
+        env!("CARGO_PKG_VERSION").into(),
+      ))
+      .with_status(404)
+      .with_body("Not Found")
+      .create();
+    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    println!("{}", err);
+    assert!(err
+      .to_string()
+      .contains("Remote server returned 404 for metadata.csv. User version 0 might not exist."));
     mock_metadata.assert();
   }
 }
