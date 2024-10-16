@@ -57,12 +57,12 @@ Listed below are the exit codes and what they mean:
 - `8` - Cannot validate archive checksum.
 
 
-# Partial quicksync
+# Incremental quicksync
 
 It is also possible to download and apply delta-based quicksync. Assuming that the `state.sql` is already present, it's worth considering applying only deltas on top of that.
-Please note that syncing large portions will be faster with full quicksync, but if you are already synced and just need to catch up with the latest state, partial quicksync is the way to go.
+Please note that syncing large portions will be faster with full quicksync, but if you are already synced and just need to catch up with the latest state, incrementa quicksync is the way to go.
 
-Partial quicksync works by checking the latest verified layer in the database and then downloading small files (usually about 50MB but up to 200MB) and applying them on top of the existing `state.sql`. Each batch can be interrupted.
+Incremental quicksync works by checking the latest verified layer in the database and then downloading small files (usually about 50MB but up to 200MB) and applying them on top of the existing `state.sql`. Each batch can be interrupted.
 
 Restoring the same batch twice is considered a no-op and will not affect the database.
 
@@ -73,6 +73,6 @@ The list of available commands for the `quicksync` utility is presented below. N
 - `./quicksync download`: Downloads the latest `state.sql` file.
 - `./quicksync check`: Checks if the current `state.sql` is up to date.
 - `./quicksync help`: Displays all operations that `quicksync` can perform.
-- `./quicksync partial`: Allows to work with delta based quicksync.
+- `./quicksync incremental`: Allows to work with delta based quicksync.
 - `./quicksync --version`: Displays the quicksync version.
 - `cargo run -- help`: Displays helpful commands for running the package. Relevant for developers.
