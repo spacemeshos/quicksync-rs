@@ -11,7 +11,7 @@ use std::{
 };
 use zstd::stream::Decoder;
 
-pub(crate) const DEFAULT_BASE_URL: &str = "https://quicksync-incrementals.spacemesh.network";
+pub(crate) const DEFAULT_BASE_URL: &str = "https://quicksync-partials.spacemesh.network";
 
 #[derive(Clone, Debug, PartialEq, Eq, parse_display::Display, parse_display::FromStr)]
 #[display("{from},{to},{hash}")]
@@ -653,7 +653,7 @@ mod tests {
       .with_body(".import backup_source.db layers")
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err.to_string().contains("unexpected hash"));
     mock_metadata.assert();
     mock_query.assert();
@@ -679,7 +679,7 @@ mod tests {
       .with_body(metadata)
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err
       .to_string()
       .contains("No suitable restore points found, seems that state.sql is too old"));
@@ -705,7 +705,7 @@ mod tests {
       .with_status(404)
       .with_body("Not Found")
       .create();
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     println!("{}", err);
     assert!(err
       .to_string()
