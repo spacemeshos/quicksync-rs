@@ -199,7 +199,7 @@ fn get_restore_points(
   Ok((start_points, remote_metadata, user_version))
 }
 
-pub fn partial_restore(
+pub fn incremental_restore(
   base_url: &str,
   target_db_path: &Path,
   download_path: &Path,
@@ -445,7 +445,7 @@ mod tests {
   }
 
   #[test]
-  fn partial_restore() {
+  fn incremental_restore() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("state.db");
     {
@@ -518,7 +518,7 @@ mod tests {
       })
       .collect::<Vec<_>>();
 
-    super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap();
+    super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -535,7 +535,7 @@ mod tests {
   }
 
   #[test]
-  fn partial_restore_with_untrusted_layers() {
+  fn incremental_restore_with_untrusted_layers() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("state.db");
     {
@@ -608,7 +608,7 @@ mod tests {
       .collect::<Vec<_>>();
 
     let untrusted_layers = 10;
-    super::partial_restore(&server.url(), &db_path, dir.path(), untrusted_layers, 0).unwrap();
+    super::incremental_restore(&server.url(), &db_path, dir.path(), untrusted_layers, 0).unwrap();
 
     mock_metadata.assert();
     mock_query.assert();
@@ -653,7 +653,7 @@ mod tests {
       .with_body(".import backup_source.db layers")
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err.to_string().contains("unexpected hash"));
     mock_metadata.assert();
     mock_query.assert();
@@ -679,7 +679,7 @@ mod tests {
       .with_body(metadata)
       .create();
 
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     assert!(err
       .to_string()
       .contains("No suitable restore points found, seems that state.sql is too old"));
@@ -705,7 +705,7 @@ mod tests {
       .with_status(404)
       .with_body("Not Found")
       .create();
-    let err = super::partial_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
+    let err = super::incremental_restore(&server.url(), &db_path, dir.path(), 0, 0).unwrap_err();
     println!("{}", err);
     assert!(err
       .to_string()

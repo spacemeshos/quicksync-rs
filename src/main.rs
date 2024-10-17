@@ -11,8 +11,8 @@ mod checksum;
 mod download;
 mod eta;
 mod go_spacemesh;
+mod incremental_quicksync;
 mod parsers;
-mod partial_quicksync;
 mod read_error_response;
 mod reader_with_bytes;
 mod sql;
@@ -24,8 +24,8 @@ use anyhow::{anyhow, Context};
 use checksum::*;
 use download::download_with_retries;
 use go_spacemesh::get_version;
+use incremental_quicksync::{check_for_restore_points, incremental_restore};
 use parsers::*;
-use partial_quicksync::{check_for_restore_points, partial_restore};
 use sql::get_last_layer_from_db;
 use utils::*;
 
@@ -81,8 +81,8 @@ enum Commands {
     #[clap(short = 'r', long, default_value = "10")]
     max_retries: u32,
   },
-  /// Uses partial recovery quicksync method
-  Partial {
+  /// Uses incremental recovery quicksync method
+  Incremental {
     /// Path to the node state.sql
     #[clap(short = 's', long)]
     state_sql: PathBuf,
@@ -94,11 +94,11 @@ enum Commands {
     #[clap(short = 'j', long, default_value_t = 0)]
     jump_back: usize,
     /// URL to download parts from
-    #[clap(short = 'u', long, default_value = partial_quicksync::DEFAULT_BASE_URL)]
+    #[clap(short = 'u', long, default_value = incremental_quicksync::DEFAULT_BASE_URL)]
     base_url: String,
   },
-  /// Partial check availability
-  PartialCheck {
+  /// Incremental check availability
+  IncrementalCheck {
     /// Path to the node state.sql
     #[clap(short = 's', long)]
     state_sql: PathBuf,
@@ -110,7 +110,7 @@ enum Commands {
     #[clap(short = 'j', long, default_value_t = 0)]
     jump_back: usize,
     /// URL to download parts from
-    #[clap(short = 'u', long, default_value = partial_quicksync::DEFAULT_BASE_URL)]
+    #[clap(short = 'u', long, default_value = incremental_quicksync::DEFAULT_BASE_URL)]
     base_url: String,
   },
 }
@@ -345,13 +345,13 @@ fn main() -> anyhow::Result<()> {
 
       Ok(())
     }
-    Commands::Partial {
+    Commands::Incremental {
       state_sql,
       untrusted_layers,
       jump_back,
       base_url,
     } => {
-      println!("Warning: partial quicksync is considered to be beta feature for now");
+      println!("Warning: incremental quicksync is considered to be beta feature for now");
       let state_sql_path = resolve_path(&state_sql).context("resolving state.sql path")?;
       if !state_sql_path
         .try_exists()
@@ -360,7 +360,7 @@ fn main() -> anyhow::Result<()> {
         return Err(anyhow!("state file not found: {:?}", state_sql_path));
       }
       let download_path = resolve_path(Path::new(".")).unwrap();
-      partial_restore(
+      incremental_restore(
         &base_url,
         &state_sql_path,
         &download_path,
@@ -368,7 +368,7 @@ fn main() -> anyhow::Result<()> {
         jump_back,
       )
     }
-    Commands::PartialCheck {
+    Commands::IncrementalCheck {
       state_sql,
       base_url,
       untrusted_layers,
