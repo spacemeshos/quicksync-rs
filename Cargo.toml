@@ -16,7 +16,7 @@ reqwest = { version = "0.12.9", features = ["json", "stream", "blocking"] }
 rusqlite = { version = "0.32.1", features = ["bundled", "backup"] }
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
-url = "2.5.0"
+url = "2.5.3"
 zstd = "0.13.0"
 hex = "0.4"
 parse-display = "0.10.0"
