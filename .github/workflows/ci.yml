@@ -113,7 +113,7 @@ jobs:
       - name: Run coverage
         run: cargo tarpaulin --exclude-files src/main.rs --out Lcov
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
