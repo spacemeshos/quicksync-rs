@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "1.0.95"
 chrono = "0.4.39"
 clap = { version = "4.5.24", features = ["derive"] }
-duration-string = "0.4.0"
+duration-string = "0.5.2"
 md5 = "0.7.0"
 regex = "1.11.1"
 reqwest = { version = "0.12.12", features = ["json", "stream", "blocking"] }
