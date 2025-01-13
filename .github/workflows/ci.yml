@@ -37,7 +37,7 @@ jobs:
         with:
           components: clippy
           toolchain: stable
-      - uses: clechasseur/rs-clippy-check@v3
+      - uses: clechasseur/rs-clippy-check@v4
 
   build:
     name: Build library
