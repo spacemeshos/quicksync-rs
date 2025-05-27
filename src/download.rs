@@ -250,7 +250,7 @@ mod tests {
     let mut server = mockito::Server::new();
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(11);
-    let binary: Vec<u8> = iter::repeat_with(|| rng.gen()).take(2_000).collect();
+    let binary: Vec<u8> = iter::repeat_with(|| rng.random()).take(2_000).collect();
     let binary = std::sync::Arc::new(binary);
     let binary_clone = binary.clone();
 
