@@ -36,7 +36,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85
         with:
           components: clippy
-      - uses: clechasseur/rs-clippy-check@v4
+      - uses: clechasseur/rs-clippy-check@v5
 
   build:
     name: Build library
